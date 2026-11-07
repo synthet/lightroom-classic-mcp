@@ -1,10 +1,18 @@
 {
   "mcpServers": {
     "lightroom": {
-      "command": "d:/Projects/lightroom-mcp/mcp-server/.venv/Scripts/python.exe",
+      "command": "d:/Projects/lightroom-classic-mcp/mcp-server/.venv/Scripts/python.exe",
       "args": [
-        "d:/Projects/lightroom-mcp/mcp-server/server.py"
+        "d:/Projects/lightroom-classic-mcp/mcp-server/server.py"
       ]
+    },
+    "lightroom-settings": {
+      "command": "python",
+      "args": [
+        "-m",
+        "src.mcp_server"
+      ],
+      "cwd": "d:/Projects/lightroom-classic-mcp/auto_settings"
     }
   }
 }

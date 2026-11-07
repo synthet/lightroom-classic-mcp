@@ -55,8 +55,8 @@ The MCP server handles starting the Broker automatically.
    {
      "mcpServers": {
        "lightroom": {
-         "command": "d:/Projects/lightroom-mcp/mcp-server/.venv/Scripts/python.exe",
-         "args": ["d:/Projects/lightroom-mcp/mcp-server/server.py"]
+         "command": "d:/Projects/lightroom-classic-mcp/mcp-server/.venv/Scripts/python.exe",
+         "args": ["d:/Projects/lightroom-classic-mcp/mcp-server/server.py"]
        }
      }
    }
@@ -83,7 +83,7 @@ See **[agents.md](./agents.md)** for detailed tool semantics and agent workflows
 ## Project layout
 
 ```
-lightroom-mcp/
+lightroom-classic-mcp/
 ├── README.md           # This file
 ├── docs/               # Knowledge index, including TourBox vs this server
 ├── agents.md           # Documentation for AI Agents

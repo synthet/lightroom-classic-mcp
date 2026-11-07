@@ -402,7 +402,7 @@ The plugin implementation is based on:
 
 To test the plugin:
 1. Load plugin in Lightroom Classic (Plug-in Manager)
-2. Check plugin logs at `D:\Projects\lightroom-mcp\plugin_debug.log`
+2. Check plugin logs at `D:\Projects\lightroom-classic-mcp\plugin_debug.log`
 3. Use `mcp-server/test_connection.py` to verify connectivity
 4. Monitor Lightroom console for LrLogger output (if enabled)
 

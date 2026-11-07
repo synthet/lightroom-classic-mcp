@@ -72,7 +72,7 @@ local function collectDebugInfo()
     end
 
     -- Read plugin_debug.log if it exists
-    local logPath = "D:\\Projects\\lightroom-mcp\\plugin_debug.log"
+    local logPath = "D:\\Projects\\lightroom-classic-mcp\\plugin_debug.log"
     local logFile = io.open( logPath, "r" )
     if logFile then
         local logLines = {}
@@ -124,7 +124,7 @@ end
 
 -- Write debug info to file
 local function writeDebugReport( info )
-    local reportPath = "D:\\Projects\\lightroom-mcp\\debug_report.txt"
+    local reportPath = "D:\\Projects\\lightroom-classic-mcp\\debug_report.txt"
     local reportFile = io.open( reportPath, "w" )
     if reportFile then
         reportFile:write( formatDebugInfo( info ) )

@@ -13,7 +13,7 @@ This workflow automates the process of updating the project's changelog, committ
    - Use `git log` and `git diff` as needed.
 
 2. **Update Changelog**
-   - Open [CHANGELOG.md](file:///d:/Projects/lightroom-mcp/CHANGELOG.md).
+   - Open [CHANGELOG.md](file:///d:/Projects/lightroom-classic-mcp/CHANGELOG.md).
    - Add a new version entry at the top (under the header) following the "Keep a Changelog" format.
    - Use the current date and increment the version based on [Semantic Versioning](https://semver.org/).
    - Populate the "Added", "Changed", and "Fixed" sections based on your summary.

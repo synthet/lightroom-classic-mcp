@@ -14,7 +14,7 @@ LrDialogs.showBezel( "MCP Bridge Stopping...", 2 )
 
 -- Log the stop request
 local function logToFile( msg )
-    local path = "D:\\Projects\\lightroom-mcp\\plugin_debug.log"
+    local path = "D:\\Projects\\lightroom-classic-mcp\\plugin_debug.log"
     local f = io.open( path, "a" )
     if f then
         f:write( os.date() .. " [Stop]: " .. tostring(msg) .. "\n" )

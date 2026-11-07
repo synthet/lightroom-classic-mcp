@@ -10,7 +10,7 @@ local LrFunctionContext = import 'LrFunctionContext'
 
 -- Log function
 local function logToFile( msg )
-    local path = "D:\\Projects\\lightroom-mcp\\plugin_debug.log"
+    local path = "D:\\Projects\\lightroom-classic-mcp\\plugin_debug.log"
     local f = io.open( path, "a" )
     if f then
         f:write( os.date() .. " [Start]: " .. tostring(msg) .. "\n" )
