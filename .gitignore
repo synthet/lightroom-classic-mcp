@@ -49,3 +49,9 @@ GEMINI.md
 .claude/
 .codex/
 .cursor/
+
+# Skill runtime copies (installed by .claude/skills) and local raw test files
+/scripts/agent-memory/
+/scripts/agent_memory/
+/scripts/skill_harness/
+/preview_tests/
