@@ -11,7 +11,7 @@ Product behavior lives in the root guides. Research lives in the notes linked be
 ## Automation research (20 October 2026)
 
 - [Automation paths synthesis](../reports/Lightroom%20automation%20paths%202026.md)
-- [Cloud Lightroom automation report](../lightroom-automation.md)
+- [Cloud Lightroom automation report](../reports/Lightroom%20cloud%20automation%20on%20Windows.md)
 - [Catalog API](../research_notes/Lightroom%20automation%20paths%202026/catalog-api.md)
 - [Classic SDK](../research_notes/Lightroom%20automation%20paths%202026/classic-sdk.md)
 - [Desktop automation](../research_notes/Lightroom%20automation%20paths%202026/desktop-automation.md)
