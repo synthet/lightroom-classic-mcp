@@ -2,7 +2,7 @@
 
 ## Project overview
 
-- **lightroom-mcp** bridges Adobe Lightroom Classic and MCP-capable AI agents (e.g. Cursor).
+- **lightroom-classic-mcp** bridges Adobe Lightroom Classic and MCP-capable AI agents (e.g. Cursor).
 - **lightroom-plugin.lrplugin/** — Lua plugin (Lightroom SDK). Runs inside Lightroom, listens on `localhost:54321`, handles JSON-RPC 2.0.
 - **mcp-server/** — Python FastMCP server. Connects to the plugin and exposes MCP tools.
 

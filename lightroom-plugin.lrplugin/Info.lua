@@ -11,7 +11,7 @@ return {
     -- Plugin identification
     LrToolkitIdentifier = 'com.antigravity.mcp',
     LrPluginName = 'MCP Bridge',
-    LrPluginInfoUrl = 'https://github.com/synthet/lightroom-mcp',
+    LrPluginInfoUrl = 'https://github.com/synthet/lightroom-classic-mcp',
 
     -- Socket server initialization (writes port to file for discovery)
     LrInitPlugin = 'Init.lua',

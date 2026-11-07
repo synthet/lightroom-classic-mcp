@@ -26,7 +26,7 @@ local BROKER_SOCKET_PORT = 8086
 local BROKER_URL = "http://" .. BROKER_HOST .. ":" .. BROKER_HTTP_PORT
 local POLL_INTERVAL = 0.1  -- seconds between polls
 local HTTP_FAIL_THRESHOLD = 5  -- consecutive HTTP failures before fallback
-local LOG_FILE = "D:\\Projects\\lightroom-mcp\\plugin_debug.log"
+local LOG_FILE = "D:\\Projects\\lightroom-classic-mcp\\plugin_debug.log"
 
 local function logToFile( msg )
     local f = io.open( LOG_FILE, "a" )
