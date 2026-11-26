@@ -101,6 +101,9 @@ lightroom-classic-mcp/
 
 ## Troubleshooting
 
+Tool errors start with a code such as `[NoSelection]` or `[PluginDisconnected]` and a recovery hint; see [docs/errors.md](docs/errors.md).
+
+
 - **"Lightroom not connected"**:
   - Check the Broker Dashboard at `http://localhost:8085`.
   - Ensure the Lightroom Plugin is **Enabled** (Green light in Plug-in Manager).

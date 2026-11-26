@@ -29,7 +29,18 @@ function Tests.test_get_studio_info()
     local result = CommandHandlers.get_studio_info({})
     assertTable(result)
     assertEqual("Test Catalog", result.catalogName)
-    assertEqual("0.1.0", result.pluginVersion)
+    assertEqual("0.1.0", result.pluginVersion)   -- read from the real Info.lua
+    assertEqual("16.0.1", result.lightroomVersion)
+    assertEqual(202611, result.lightroomBuild)
+    print("PASS")
+end
+
+function Tests.test_get_studio_info_reads_plugin_version_from_info()
+    print("Running test_get_studio_info_reads_plugin_version_from_info...")
+    Mocks.state.files["../Info.lua"] = 'return { VERSION = { major = 9, display = "9.8.7" } }'
+    local result = CommandHandlers.get_studio_info({})
+    Mocks.state.files["../Info.lua"] = nil
+    assertEqual("9.8.7", result.pluginVersion)
     print("PASS")
 end
 
