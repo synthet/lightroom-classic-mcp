@@ -36,8 +36,8 @@ HINTS = {
     LrcErrorCode.NOT_FOUND: "Check the name, id or path; list what exists first (list_collections, list_develop_presets, search_photos).",
     LrcErrorCode.METHOD_NOT_FOUND: "The installed plugin is older than this server. Reinstall lightroom-plugin.lrplugin and reload it in Plug-in Manager.",
     LrcErrorCode.PLUGIN_ERROR: "The plugin reported an error; see the message and plugin_debug.log.",
-    LrcErrorCode.TARGET_MISMATCH: "The photos Lightroom would change are not the ones you named. Re-read the selection and resend with the right expected photos.",
-    LrcErrorCode.READBACK_MISMATCH: "A value did not read back as written. Read the settings and retry.",
+    LrcErrorCode.TARGET_MISMATCH: "The selected photos are not exactly the ones in expected_photos. Call get_selection, then resend with all selected ids or file names (or select the right photos first).",
+    LrcErrorCode.READBACK_MISMATCH: "A develop value did not read back as written (out of range, or another controller changed it). Call get_develop_settings, then retry.",
     LrcErrorCode.INTERNAL: "Unexpected server error; see the message and mcp_debug.log.",
 }
 
@@ -61,6 +61,10 @@ def as_tool_error(exc: Exception) -> McpError:
 def classify_plugin_message(message: str) -> str:
     """Map a plugin handler's error string to a code."""
     text = (message or "").lower()
+    if text.startswith("target mismatch"):
+        return LrcErrorCode.TARGET_MISMATCH
+    if text.startswith("readback mismatch"):
+        return LrcErrorCode.READBACK_MISMATCH
     if "no active catalog" in text:
         return LrcErrorCode.NO_CATALOG
     if "no photos selected" in text:

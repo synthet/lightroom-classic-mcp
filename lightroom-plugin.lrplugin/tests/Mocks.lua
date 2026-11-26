@@ -97,6 +97,23 @@ function Mocks.Photo:setRawMetadata( key, value )
     self.metadata[key] = value
 end
 
+-- Develop settings; keys listed in Mocks.state.ignoreDevelopKeys do not stick (readback tests)
+function Mocks.Photo:getDevelopSettings()
+    self.develop = self.develop or {}
+    local copy = {}
+    for k, v in pairs( self.develop ) do copy[k] = v end
+    return copy
+end
+
+function Mocks.Photo:applyDevelopSettings( settings )
+    self.develop = self.develop or {}
+    for k, v in pairs( settings ) do
+        if not ( Mocks.state.ignoreDevelopKeys and Mocks.state.ignoreDevelopKeys[k] ) then
+            self.develop[k] = v
+        end
+    end
+end
+
 function Mocks.Photo:addKeyword( keyword )
     table.insert( self.metadata.keywords, keyword )
 end

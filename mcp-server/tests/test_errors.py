@@ -43,6 +43,9 @@ class ClassifyTests(unittest.TestCase):
             "Invalid rating parameter": LrcErrorCode.INVALID_PARAMS,
             "Rating must be between 0 and 5": LrcErrorCode.INVALID_PARAMS,
             "Failed to create or find collection": LrcErrorCode.PLUGIN_ERROR,
+            "Target mismatch: Lightroom would change [a.NEF] but expected [b]": LrcErrorCode.TARGET_MISMATCH,
+            "Readback mismatch: a.NEF.Exposure2012: wanted 1, got 0": LrcErrorCode.READBACK_MISMATCH,
+            "Invalid expected parameter - list the ids": LrcErrorCode.INVALID_PARAMS,
         }
         for message, code in cases.items():
             self.assertEqual(code, errors.classify_plugin_message(message), message)
@@ -142,8 +145,65 @@ class ToolCallTests(unittest.TestCase):
         self.assertIn("keywords", text)
 
     def test_typed_errors_reach_the_client_without_the_fastmcp_prefix(self):
-        text = self._call("set_rating", {"rating": 9})
+        text = self._call("set_rating", {"rating": 9, "expected_photos": ["a"], "confirmed": True})
         self.assertTrue(text.startswith("[InvalidParams] Rating must be between 0 and 5"), text)
+
+
+class WriteContractTests(unittest.TestCase):
+    WRITE_TOOLS = ["set_rating", "set_label", "set_caption", "set_title", "set_pick_flag", "add_keywords",
+                   "remove_keywords", "set_metadata", "set_develop_settings", "set_iptc_data", "set_gps_data",
+                   "clear_gps_data"]
+
+    def _call(self, name, arguments):
+        with self.assertRaises(Exception) as caught:
+            asyncio.run(server.mcp.call_tool(name, arguments))
+        return str(caught.exception)
+
+    def test_every_write_tool_requires_expected_photos(self):
+        for tool in self.WRITE_TOOLS:
+            schema = next(t for t in asyncio.run(server.mcp.list_tools()) if t.name == tool).inputSchema
+            self.assertIn("expected_photos", schema["required"], tool)
+            self.assertIn("confirmed", schema["properties"], tool)
+            self.assertIn("dry_run", schema["properties"], tool)
+
+    def test_missing_expected_photos_is_invalid_params(self):
+        text = self._call("set_rating", {"rating": 3, "confirmed": True})
+        self.assertTrue(text.startswith("[InvalidParams]"), text)
+        self.assertIn("expected_photos", text)
+
+    def test_unconfirmed_write_is_refused_before_contacting_lightroom(self):
+        client = MagicMock()
+        with self.assertRaises(McpError) as caught:
+            asyncio.run(server.set_rating(3, ["DSC_0001"], _ctx(client)))
+        self.assertEqual(LrcErrorCode.INVALID_PARAMS, _code(caught.exception))
+        self.assertIn("confirmed", caught.exception.error.message)
+        client.send_command.assert_not_called()
+
+    def test_empty_expected_photos_is_refused(self):
+        client = MagicMock()
+        with self.assertRaises(McpError) as caught:
+            asyncio.run(server.set_title("t", [], _ctx(client), confirmed=True))
+        self.assertEqual(LrcErrorCode.INVALID_PARAMS, _code(caught.exception))
+        client.send_command.assert_not_called()
+
+    def test_contract_fields_reach_the_plugin_and_dry_run_needs_no_confirmation(self):
+        client = MagicMock()
+        client.send_command.return_value = {"result": {"dryRun": True, "photos": [{"localId": "1", "before": {"rating": 2}, "after": {"rating": 4}}]}}
+        plan = asyncio.run(server.set_rating(4, ["DSC_0001"], _ctx(client), dry_run=True))
+        self.assertTrue(plan["dryRun"])
+        method, params = client.send_command.call_args[0]
+        self.assertEqual("set_rating", method)
+        self.assertEqual({"rating": 4, "expected": ["DSC_0001"], "confirmed": False, "dryRun": True}, params)
+
+    def test_target_and_readback_mismatches_are_typed(self):
+        for message, code in [("Target mismatch: Lightroom would change [a.NEF] but expected [b]", LrcErrorCode.TARGET_MISMATCH),
+                              ("Readback mismatch: a.NEF.Exposure2012: wanted 1, got 0", LrcErrorCode.READBACK_MISMATCH)]:
+            client = lrc_client.LrCClient()
+            with patch.object(client, "_ensure_broker_running", return_value=True), \
+                 patch("lrc_client.requests.post", return_value=_response({"result": {"error": message}})):
+                with self.assertRaises(McpError) as caught:
+                    asyncio.run(server.set_develop_settings({"Exposure2012": 1}, ["a"], _ctx(client), confirmed=True))
+            self.assertEqual(code, _code(caught.exception))
 
 
 class ServerTests(unittest.TestCase):
@@ -158,12 +218,12 @@ class ServerTests(unittest.TestCase):
     def test_a_write_that_did_nothing_no_longer_reports_success(self):
         client = self._client_returning({"jsonrpc": "2.0", "id": 1, "result": {"error": "No photos selected"}})
         with self.assertRaises(McpError) as caught:
-            asyncio.run(server.set_develop_settings({"Exposure": 1.0}, _ctx(client)))
+            asyncio.run(server.set_develop_settings({"Exposure": 1.0}, ["DSC_0001"], _ctx(client), confirmed=True))
         self.assertEqual(LrcErrorCode.NO_SELECTION, _code(caught.exception))
 
     def test_tool_argument_errors_are_invalid_params(self):
         with self.assertRaises(McpError) as caught:
-            asyncio.run(server.set_rating(9, _ctx(MagicMock())))
+            asyncio.run(server.set_rating(9, ["DSC_0001"], _ctx(MagicMock()), confirmed=True))
         self.assertEqual(LrcErrorCode.INVALID_PARAMS, _code(caught.exception))
 
     def test_studio_info_reports_versions_and_capabilities(self):

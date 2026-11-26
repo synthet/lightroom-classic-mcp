@@ -13,8 +13,8 @@ Every tool failure reaches the client as text that starts with `[<Code>]`, then 
 | `NotFound` | A preset, collection, photo or file doesn't exist | List what exists first (`list_develop_presets`, `list_collections`, `search_photos`) |
 | `MethodNotFound` | The installed plugin doesn't know the command: it's older than the server | Reinstall `lightroom-plugin.lrplugin` and reload it in Plug-in Manager |
 | `PluginError` | The plugin reported another error | See the message and `plugin_debug.log` |
-| `TargetMismatch` | Reserved for the write contract (lrcmcp-aiakw): the photos a write would change aren't the ones named | Re-read the selection and resend |
-| `ReadbackMismatch` | Reserved for the write contract (lrcmcp-aiakw): a value didn't read back as written | Read the settings and retry |
+| `TargetMismatch` | A write's `expected_photos` doesn't match the selected photos exactly (see [tools.md](tools.md#write-contract)); nothing was written | Call `get_selection` and resend with all selected ids or file names, or select the right photos |
+| `ReadbackMismatch` | After `set_develop_settings`, a value didn't read back as written (out of range, or changed by something else) | Call `get_develop_settings`, then retry |
 | `InternalError` | Anything unexpected in the server | See the message and `mcp_debug.log` |
 
 Before this list existed, a plugin handler that couldn't act (for example "No photos selected") returned its error inside a normal result, and write tools reported "Success". The server now treats any result of the form `{"error": "..."}` as a failure with the matching code.
