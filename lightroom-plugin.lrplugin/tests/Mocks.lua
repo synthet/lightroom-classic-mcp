@@ -177,7 +177,28 @@ Mocks.Catalog = {
 
 -- Mock LrApplication
 Mocks.LrApplication = {
-    activeCatalog = function() return Mocks.Catalog end
+    activeCatalog = function() return Mocks.Catalog end,
+    versionString = function() return "16.0.1" end,
+    versionTable = function() return { major = 16, minor = 0, revision = 1, build = 202611 } end
 }
+
+-- Mock LrPathUtils / LrFileUtils: Mocks.state.files overrides disk reads by path
+Mocks.state.files = {}
+Mocks.LrPathUtils = {
+    child = function( dir, name ) return dir .. "/" .. name end
+}
+Mocks.LrFileUtils = {
+    readFile = function( path )
+        if Mocks.state.files[path] ~= nil then return Mocks.state.files[path] end
+        local f = io.open( path, "r" )
+        if not f then return nil end
+        local text = f:read( "*a" )
+        f:close()
+        return text
+    end
+}
+
+-- Plugin global; tests run from the tests folder
+_PLUGIN = { path = ".." }
 
 return Mocks

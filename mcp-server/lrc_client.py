@@ -14,7 +14,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from mcp.shared.exceptions import McpError
+
 import requests
+
+from errors import LrcErrorCode, raise_for_response, tool_error
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +86,7 @@ class LrCClient:
         # Ensure broker is running
         if not self._ensure_broker_running():
             if not self.start_broker():
-                raise ConnectionError("Broker not running and failed to start")
+                raise tool_error(LrcErrorCode.BROKER_UNAVAILABLE, "Broker not running and failed to start.")
 
         self._request_id += 1
         request = {
@@ -101,24 +105,33 @@ class LrCClient:
             )
 
             if response.status_code == 504:
-                raise ConnectionError("Request timeout - Lightroom not responding")
+                raise self._timeout_error(method)
 
             response.raise_for_status()
             result = response.json()
             logger.debug(f"Received response for: {method}")
-            return result
-
+        except McpError:
+            raise
         except requests.exceptions.Timeout:
             logger.error("Request timeout")
-            raise ConnectionError("Request timeout")
-
+            raise self._timeout_error(method)
         except requests.exceptions.ConnectionError:
             logger.error("Connection error - broker not available")
-            raise ConnectionError("Broker not available")
-
+            raise tool_error(LrcErrorCode.BROKER_UNAVAILABLE, "Broker not available.")
         except Exception as e:
             logger.error(f"Communication error: {e}")
-            raise ConnectionError(f"Communication error: {e}")
+            raise tool_error(LrcErrorCode.INTERNAL, f"Communication error: {e}")
+
+        if isinstance(result, dict) and isinstance(result.get("error"), dict) and result["error"].get("code") == -32000:
+            raise self._timeout_error(method)
+        return raise_for_response(result)
+
+    @staticmethod
+    def _timeout_error(method: str) -> McpError:
+        """PluginDisconnected when the plugin is not polling the broker, else LightroomTimeout."""
+        if not check_plugin_status().get("lightroom_connected", False):
+            return tool_error(LrcErrorCode.PLUGIN_DISCONNECTED, f"Lightroom plugin is not connected to the broker ({method}).")
+        return tool_error(LrcErrorCode.LIGHTROOM_TIMEOUT, f"Lightroom did not answer {method} in time.")
 
     def close(self):
         """Close the client and terminate broker if started by this instance."""

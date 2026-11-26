@@ -9,6 +9,8 @@ local LrSelection = import 'LrSelection'
 local LrLogger = import 'LrLogger'
 local LrTasks = import 'LrTasks'
 local LrFunctionContext = import 'LrFunctionContext'
+local LrFileUtils = import 'LrFileUtils'
+local LrPathUtils = import 'LrPathUtils'
 
 local logger = LrLogger( 'MCPBridge' )
 logger:enable( 'print' )
@@ -79,9 +81,20 @@ local function safeGetFormattedMetadata( photo, key )
     return nil
 end
 
+-- The plugin version as Info.lua declares it (VERSION.display), or "unknown"
+local function readPluginVersion()
+    local ok, text = LrTasks.pcall( function()
+        return LrFileUtils.readFile( LrPathUtils.child( _PLUGIN.path, "Info.lua" ) )
+    end )
+    if ok and type( text ) == "string" then
+        return text:match( 'display%s*=%s*"([^"]+)"' ) or "unknown"
+    end
+    return "unknown"
+end
+
 --[[
-    get_studio_info - Returns catalog and plugin information
-    Returns: { catalogName, catalogPath, pluginVersion }
+    get_studio_info - Returns catalog, Lightroom and plugin information
+    Returns: { catalogName, catalogPath, lightroomVersion, lightroomBuild, pluginVersion }
 ]]
 function CommandHandlers.get_studio_info( params )
     return safeCall( function()
@@ -94,10 +107,14 @@ function CommandHandlers.get_studio_info( params )
         -- Extract catalog name from path (filename without extension)
         local catalogName = catalogPath:match( "([^/\\]+)%.lrcat$" ) or catalogPath:match( "([^/\\]+)$" ) or "Unknown"
 
+        local versionTable = LrApplication.versionTable and LrApplication.versionTable() or {}
+
         return {
             catalogName = catalogName,
             catalogPath = catalogPath,
-            pluginVersion = "0.1.0"
+            lightroomVersion = LrApplication.versionString and LrApplication.versionString() or nil,
+            lightroomBuild = versionTable.build,
+            pluginVersion = readPluginVersion()
         }
     end )
 end
