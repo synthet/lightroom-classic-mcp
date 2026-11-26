@@ -1,6 +1,6 @@
 # Error codes
 
-Every tool failure starts with `[<Code>]`, then the message, then `Hint:` and a recovery step. The same code and hint are in the error's `data` (`{"code", "hint"}`). Codes are defined in `mcp-server/errors.py`.
+Every tool failure reaches the client as text that starts with `[<Code>]`, then the message, then `Hint:` and a recovery step. This includes arguments that fail type or presence checks before a tool runs. MCP clients see only this text: FastMCP returns tool errors as text, so the code lives in the text. Codes are defined in `mcp-server/errors.py`, and `LightroomMCP.call_tool` in `server.py` turns argument validation errors into `InvalidParams`.
 
 | Code | When | Recovery |
 |---|---|---|

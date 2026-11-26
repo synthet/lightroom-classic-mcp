@@ -117,6 +117,35 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(LrcErrorCode.LIGHTROOM_TIMEOUT, _code(caught.exception))
 
 
+class ToolCallTests(unittest.TestCase):
+    """Errors as an MCP client sees them: through FastMCP's call_tool, text only."""
+
+    def _call(self, name, arguments):
+        with self.assertRaises(Exception) as caught:
+            asyncio.run(server.mcp.call_tool(name, arguments))
+        return str(caught.exception)
+
+    def test_wrong_argument_type_is_invalid_params(self):
+        text = self._call("set_rating", {"rating": "abc"})
+        self.assertTrue(text.startswith("[InvalidParams]"), text)
+        self.assertIn("rating", text)
+        self.assertIn("Hint:", text)
+
+    def test_missing_argument_is_invalid_params(self):
+        text = self._call("set_rating", {})
+        self.assertTrue(text.startswith("[InvalidParams]"), text)
+        self.assertIn("rating", text)
+
+    def test_list_argument_given_a_string_is_invalid_params(self):
+        text = self._call("add_keywords", {"keywords": "x"})
+        self.assertTrue(text.startswith("[InvalidParams]"), text)
+        self.assertIn("keywords", text)
+
+    def test_typed_errors_reach_the_client_without_the_fastmcp_prefix(self):
+        text = self._call("set_rating", {"rating": 9})
+        self.assertTrue(text.startswith("[InvalidParams] Rating must be between 0 and 5"), text)
+
+
 class ServerTests(unittest.TestCase):
     def _client_returning(self, body):
         client = lrc_client.LrCClient()

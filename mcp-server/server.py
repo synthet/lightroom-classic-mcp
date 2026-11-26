@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import ValidationError
 from mcp.server.session import ServerSession
 from mcp.shared.exceptions import McpError
 
@@ -68,8 +70,36 @@ async def app_lifespan(server: FastMCP):
     finally:
         lrc.close()
 
+def _describe_validation(error: ValidationError) -> str:
+    """One line per bad argument, e.g. "rating: Input should be a valid integer"."""
+    return "; ".join(
+        f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in error.errors()
+    )
+
+
+class LightroomMCP(FastMCP):
+    """FastMCP whose tool errors all reach the client as "[Code] message Hint: ...".
+
+    FastMCP wraps every tool exception as "Error executing tool X: ..." and passes only that text on.
+    Argument validation fails before a tool body runs, so it is mapped to InvalidParams here; typed
+    errors raised inside tools are passed on without the prefix.
+    """
+
+    async def call_tool(self, name, arguments):
+        try:
+            return await super().call_tool(name, arguments)
+        except ToolError as exc:
+            cause = exc.__cause__
+            if isinstance(cause, ValidationError):
+                typed = tool_error(LrcErrorCode.INVALID_PARAMS, f"Invalid arguments for {name}: {_describe_validation(cause)}")
+                raise ToolError(typed.error.message) from cause
+            if isinstance(cause, McpError):
+                raise ToolError(cause.error.message) from cause
+            raise
+
+
 # Initialize MCP Server with metadata
-mcp = FastMCP(
+mcp = LightroomMCP(
     "Lightroom MCP",
     instructions="Use this server to control Adobe Lightroom Classic: manage photos, metadata, develop settings, presets, and collections.",
     lifespan=app_lifespan

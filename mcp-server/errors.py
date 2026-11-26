@@ -1,6 +1,7 @@
 """Typed tool errors for the Lightroom Classic MCP server.
 
-Every failure an agent sees starts with "[<Code>]" and carries {"code", "hint"} in the error data.
+Every failure an agent sees starts with "[<Code>]" and ends with a recovery hint. The McpError also carries
+{"code", "hint"} in its data, but FastMCP passes only the text to clients (see LightroomMCP in server.py).
 The codes and their recovery hints are documented in docs/errors.md.
 """
 
