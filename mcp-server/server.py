@@ -1631,7 +1631,9 @@ async def get_current_module(ctx: Context[ServerSession, AppContext]) -> str:
     try:
         result = lrc.send_command("get_current_module")
         if result and "result" in result:
-            return result["result"]
+            # The plugin replies {module = name}; the tool returns the name
+            reply = result["result"]
+            return reply.get("module", "") if isinstance(reply, dict) else str(reply)
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
