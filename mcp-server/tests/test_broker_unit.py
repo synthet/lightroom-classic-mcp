@@ -118,7 +118,9 @@ class TestBrokerUnit(unittest.TestCase):
         data = res.get_json()
         self.assertIn("error", data)
 
-    def test_auto_edit_invalid_base64(self):
+    @patch('broker.GeminiAPIProvider')
+    def test_auto_edit_invalid_base64(self, _provider):
+        # Mock the provider so this checks the base64 validation, not whether auto_settings is importable
         client = broker.app.test_client()
         res = client.post('/auto_edit', headers={broker.broker_auth.TOKEN_HEADER: "unit-token"}, json={"image": 12345})
         self.assertEqual(res.status_code, 400)

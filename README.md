@@ -107,8 +107,8 @@ CI runs both suites on every push to `master` and on pull requests (`.github/wor
 # Lua plugin tests (Lua 5.1, mocked Lightroom SDK)
 cd lightroom-plugin.lrplugin/tests && lua RunTests.lua
 
-# mcp-server tests; the repository root on PYTHONPATH makes the auto_settings submodule importable
-cd mcp-server && PYTHONPATH=.. python -m unittest discover -s tests
+# mcp-server tests
+cd mcp-server && python -m unittest discover -s tests
 ```
 
 ## Troubleshooting

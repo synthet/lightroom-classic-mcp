@@ -13,9 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # The auto_settings submodule isn't needed: the broker tests mock its provider
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Install Lua 5.1
         run: |
@@ -37,6 +36,4 @@ jobs:
 
       - name: Python tests
         working-directory: mcp-server
-        env:
-          PYTHONPATH: ${{ github.workspace }}
         run: python -m unittest discover -s tests
