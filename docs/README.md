@@ -4,7 +4,7 @@ Product behavior lives in the root guides. Research lives in the notes linked be
 
 ## Product
 
-- [README](../README.md) — setup, broker on port 8085, plug-in socket on port 8086
+- [README](../README.md) — setup, broker on port 8085 (the plug-in polls it over HTTP)
 - [AGENTS.md](../AGENTS.md) — MCP tool semantics
 - [SDK integration](../SDK_INTEGRATION.md) — this repository’s Lightroom Classic plug-in and SDK 15.0
 

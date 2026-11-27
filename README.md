@@ -5,7 +5,7 @@ Bridge between [Adobe Lightroom Classic](https://www.adobe.com/products/photosho
 ## Architecture
 
 - **Lightroom Plugin** (`lightroom-plugin.lrplugin/`) — Lua plugin running inside Lightroom Classic.
-  - Connects to the Broker via Socket (port 8086) or HTTP polling.
+  - Connects to the Broker by HTTP long polling (port 8085), sending the access token from `~/.lightroom-classic-mcp/broker.json`.
 - **MCP Broker** (`mcp-server/broker.py`) — A lightweight Flask server that acts as a bridge.
   - Relays requests between the Python MCP server and the Lua plugin.
   - Provides a dashboard at `http://localhost:8085`. Open it from the broker's tray icon (**Open Dashboard**) or from the link the broker prints at startup: both carry the access token the dashboard needs.
@@ -17,7 +17,7 @@ Bridge between [Adobe Lightroom Classic](https://www.adobe.com/products/photosho
 graph LR
     Agent[Cursor / Agent] <-->|MCP| Server[MCP Server]
     Server <-->|HTTP| Broker[Broker :8085]
-    Broker <-->|Socket :8086| Plugin[Lightroom Plugin]
+    Broker <-->|HTTP polling| Plugin[Lightroom Plugin]
 ```
 
 ## Prerequisites
@@ -34,7 +34,7 @@ graph LR
    - **macOS:** `~/Library/Application Support/Adobe/Lightroom/Modules/`
    - **Windows:** `%APPDATA%\Adobe\Lightroom\Modules\`
 2. In Lightroom: **File → Plug-in Manager → Add** and select the plugin folder.
-3. Ensure the plugin is **Enabled**. It will attempt to connect to the Broker on port 8086.
+3. Ensure the plugin is **Enabled**. It polls the Broker on port 8085 and reconnects within a couple of seconds after the Broker restarts.
 
 ### 2. Configure & Run MCP Server
 
@@ -115,7 +115,7 @@ Tool errors start with a code such as `[NoSelection]` or `[PluginDisconnected]` 
   - You can manually start it: `python mcp-server/start_broker.py`
 
 - **Port Conflicts**:
-  - Broker uses port **8085** (HTTP) and **8086** (Socket). Ensure these are free.
+  - Broker uses port **8085** (HTTP). Ensure it is free.
 
 ## License
 

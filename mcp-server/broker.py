@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import os
+import socket
 import sys
 import threading
 import time
@@ -40,7 +41,6 @@ logger = logging.getLogger(__name__)
 
 BROKER_PORT = 8085
 BROKER_HOST = '127.0.0.1'
-SOCKET_PORT = 8086  # Fallback socket port for plugin
 REQUEST_TIMEOUT = 30  # seconds
 POLL_TIMEOUT = 0.5  # seconds for long-polling
 LR_CONNECTION_TIMEOUT = 5  # seconds before considering LR disconnected
@@ -691,7 +691,6 @@ def api_config():
     return jsonify({
         "broker_port": BROKER_PORT,
         "broker_host": BROKER_HOST,
-        "socket_port": SOCKET_PORT,
         "request_timeout": REQUEST_TIMEOUT,
         "poll_timeout": POLL_TIMEOUT,
         "lr_connection_timeout": LR_CONNECTION_TIMEOUT,
@@ -751,153 +750,6 @@ def websocket(ws):
             if ws in ws_clients:
                 ws_clients.remove(ws)
         broker_log("DEBUG", "WebSocket client disconnected")
-
-
-# ============================================================================
-# Fallback Socket Server (for Lightroom plugin)
-# ============================================================================
-
-import socket
-import select
-
-# Socket client connection (only one at a time for simplicity)
-socket_client = None
-socket_client_lock = threading.Lock()
-
-def handle_socket_client(client_socket, client_address):
-    """Handle a connected socket client (Lightroom plugin)."""
-    global socket_client
-
-    broker_log("INFO", f"Socket client connected from {client_address}")
-
-    with socket_client_lock:
-        socket_client = client_socket
-
-    # Update connection status
-    should_broadcast = False
-    with stats_lock:
-        broker_stats["lightroom_last_poll"] = datetime.now(timezone.utc)
-        if not broker_stats["lightroom_connected"]:
-            broker_stats["lightroom_connected"] = True
-            should_broadcast = True
-
-    # Broadcast OUTSIDE the lock
-    if should_broadcast:
-        broker_log("INFO", "Lightroom connected (socket)")
-        broadcast_ws({
-            "type": "status_update",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": {"lightroom_connected": True}
-        })
-
-    buffer = b""
-
-    try:
-        while True:
-            # Check for incoming data or outgoing requests
-            ready_to_read, _, _ = select.select([client_socket], [], [], 0.1)
-
-            if ready_to_read:
-                data = client_socket.recv(4096)
-                if not data:
-                    break
-
-                buffer += data
-
-                # Process complete messages (newline-delimited JSON)
-                while b"\n" in buffer:
-                    line, buffer = buffer.split(b"\n", 1)
-                    if line:
-                        try:
-                            message = json.loads(line.decode('utf-8'))
-                            handle_socket_message(client_socket, message)
-                        except json.JSONDecodeError as e:
-                            broker_log("WARNING", f"Invalid JSON from socket: {e}")
-
-            # Update last poll time periodically
-            with stats_lock:
-                broker_stats["lightroom_last_poll"] = datetime.now(timezone.utc)
-
-            # Check if there's a pending request to send
-            with request_queue_lock:
-                if request_queue:
-                    request_data = request_queue.popleft()
-                    if not request_queue:
-                        request_queue_event.clear()
-
-                    # Send request to socket client
-                    try:
-                        msg = json.dumps(request_data) + "\n"
-                        client_socket.sendall(msg.encode('utf-8'))
-                        broker_log("DEBUG", f"Sent request via socket: {request_data.get('method', 'unknown')}")
-                    except Exception as e:
-                        broker_log("ERROR", f"Failed to send via socket: {e}")
-                        # Put request back in queue
-                        request_queue.appendleft(request_data)
-                        request_queue_event.set()
-                        break
-
-    except Exception as e:
-        broker_log("WARNING", f"Socket client error: {e}")
-
-    finally:
-        with socket_client_lock:
-            socket_client = None
-
-        try:
-            client_socket.close()
-        except:
-            pass
-
-        broker_log("INFO", "Socket client disconnected")
-
-
-def handle_socket_message(client_socket, message):
-    """Handle a message received from the socket client."""
-    # This is a response from Lightroom
-    if "_broker_uuid" in message:
-        request_uuid = message.pop("_broker_uuid")
-
-        with pending_requests_lock:
-            if request_uuid in pending_requests:
-                pending_requests[request_uuid]["response"] = message
-                pending_requests[request_uuid]["event"].set()
-                broker_log("DEBUG", f"Socket response received for {request_uuid[:8]}")
-            else:
-                broker_log("WARNING", f"Socket: No pending request for UUID {request_uuid[:8]}")
-    else:
-        broker_log("WARNING", "Socket message missing _broker_uuid")
-
-
-def run_socket_server():
-    """Run the fallback socket server."""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    try:
-        server_socket.bind((BROKER_HOST, SOCKET_PORT))
-        server_socket.listen(1)
-        broker_log("INFO", f"Socket server listening on {BROKER_HOST}:{SOCKET_PORT}")
-
-        while True:
-            try:
-                client_socket, client_address = server_socket.accept()
-                # Handle client in a thread
-                client_thread = threading.Thread(
-                    target=handle_socket_client,
-                    args=(client_socket, client_address),
-                    daemon=True
-                )
-                client_thread.start()
-            except Exception as e:
-                broker_log("ERROR", f"Socket accept error: {e}")
-                time.sleep(1)
-
-    except Exception as e:
-        broker_log("ERROR", f"Socket server error: {e}")
-
-    finally:
-        server_socket.close()
 
 
 # ============================================================================
@@ -1569,7 +1421,6 @@ def run_broker():
 
     broker_log("INFO", f"Starting Lightroom MCP Broker")
     broker_log("INFO", f"  HTTP: http://{BROKER_HOST}:{BROKER_PORT}")
-    broker_log("INFO", f"  Socket fallback: {BROKER_HOST}:{SOCKET_PORT}")
     broker_log("INFO", f"  Access token: {discovery}")
     # Console only (not the broker log, which /api/logs serves): the dashboard link with its token
     print(f"Dashboard: http://localhost:{BROKER_PORT}/#token={BROKER_TOKEN}")
@@ -1581,9 +1432,6 @@ def run_broker():
         tray_thread.start()
         broker_log("INFO", "System tray icon started")
 
-    # Start socket server in separate thread
-    socket_thread = threading.Thread(target=run_socket_server, daemon=True)
-    socket_thread.start()
 
     # Run Flask server (main thread)
     try:
