@@ -30,13 +30,13 @@ CAPABILITIES = {
 }
 
 
-def _write_params(params: dict, expected_photos: list[str], confirmed: bool, dry_run: bool) -> dict:
+def _write_params(params: dict, expected_photos: list[str | int], confirmed: bool, dry_run: bool) -> dict:
     """Checks the write contract (docs/tools.md) and adds its fields to the plugin params."""
     if not expected_photos:
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "expected_photos must list the ids or file names of the photos to change.")
     if not dry_run and not confirmed:
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "Writes need confirmed=true. Preview with dry_run=true first.")
-    return {**params, "expected": list(expected_photos), "confirmed": bool(confirmed), "dryRun": bool(dry_run)}
+    return {**params, "expected": [str(p) for p in expected_photos], "confirmed": bool(confirmed), "dryRun": bool(dry_run)}
 
 # Try to import Pillow for image metadata reading
 try:
@@ -156,7 +156,7 @@ async def get_selection(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_rating(rating: int, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_rating(rating: int, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the star rating for the currently selected photos.
 
@@ -185,7 +185,7 @@ async def set_rating(rating: int, expected_photos: list[str], ctx: Context[Serve
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_label(label: str, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_label(label: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the color label for the currently selected photos.
 
@@ -215,7 +215,7 @@ async def set_label(label: str, expected_photos: list[str], ctx: Context[ServerS
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_caption(caption: str, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_caption(caption: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the caption for the currently selected photos.
 
@@ -238,7 +238,7 @@ async def set_caption(caption: str, expected_photos: list[str], ctx: Context[Ser
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_title(title: str, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_title(title: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the title for the currently selected photos.
 
@@ -264,7 +264,7 @@ async def set_title(title: str, expected_photos: list[str], ctx: Context[ServerS
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_pick_flag(pick_flag: str, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_pick_flag(pick_flag: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the pick flag (pick/reject) for the currently selected photos.
 
@@ -294,7 +294,7 @@ async def set_pick_flag(pick_flag: str, expected_photos: list[str], ctx: Context
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def add_keywords(keywords: list[str], expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def add_keywords(keywords: list[str], expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Add keywords to the currently selected photos.
 
@@ -323,7 +323,7 @@ async def add_keywords(keywords: list[str], expected_photos: list[str], ctx: Con
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def remove_keywords(keywords: list[str], expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def remove_keywords(keywords: list[str], expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Remove keywords from the currently selected photos.
 
@@ -437,7 +437,7 @@ async def search_photos(query: str, ctx: Context[ServerSession, AppContext]) -> 
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_metadata(field: str, value: str, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_metadata(field: str, value: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set a metadata field for the currently selected photos.
 
@@ -625,7 +625,7 @@ async def get_iptc_data(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_iptc_data(data: dict, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_iptc_data(data: dict, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set IPTC metadata for the currently selected photos.
 
@@ -691,7 +691,7 @@ async def get_all_metadata(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_gps_data(latitude: float, longitude: float, expected_photos: list[str], altitude: Optional[float] = None, ctx: Context[ServerSession, AppContext] = None, confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_gps_data(latitude: float, longitude: float, expected_photos: list[str | int], altitude: Optional[float] = None, ctx: Context[ServerSession, AppContext] = None, confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set GPS coordinates for the currently selected photos.
 
@@ -728,7 +728,7 @@ async def set_gps_data(latitude: float, longitude: float, expected_photos: list[
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def clear_gps_data(expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def clear_gps_data(expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Clear/remove GPS coordinates from the currently selected photos.
 
@@ -1267,7 +1267,7 @@ async def get_develop_settings(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_develop_settings(settings: dict, expected_photos: list[str], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
+async def set_develop_settings(settings: dict, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set develop/Camera Raw settings for the currently selected photos.
 

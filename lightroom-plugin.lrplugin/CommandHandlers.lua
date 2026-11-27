@@ -124,6 +124,25 @@ local function requested( params )
     return values
 end
 
+-- Keyword names as keywordTags shows them: leaf names, comma separated
+local function plannedKeywords( photo, keywords, add )
+    local list = {}
+    for name in tostring( safeGetFormattedMetadata( photo, "keywordTags" ) or "" ):gmatch( "[^,]+" ) do
+        name = name:match( "^%s*(.-)%s*$" )
+        if name ~= "" then list[#list + 1] = name end
+    end
+    for _, path in ipairs( keywords ) do
+        local leaf = tostring( path )
+        for part in tostring( path ):gmatch( "[^>]+" ) do leaf = part end
+        leaf = leaf:match( "^%s*(.-)%s*$" )
+        local at
+        for i, name in ipairs( list ) do if name == leaf then at = i end end
+        if add and not at then list[#list + 1] = leaf
+        elseif not add and at then table.remove( list, at ) end
+    end
+    return { keywords = table.concat( list, ", " ) }
+end
+
 -- Returns the target photos when the write may run. Otherwise returns nil and a result to send
 -- back as is: an error, or with dryRun the plan { dryRun, photos = { localId, fileName, before, after } }.
 -- before( photo ) gives the current values; after( photo ) the planned ones (default: requested( params )).
@@ -140,27 +159,34 @@ local function guardWrite( catalog, params, before, after )
         return nil, { error = "Invalid confirmed parameter - writes need confirmed = true; preview with dryRun first" }
     end
 
-    local used, names, unmatched = {}, {}, false
+    -- Match one to one: every expected entry names exactly one selected photo, no photo twice, and
+    -- the counts agree. A name or base name shared by several photos (raw + JPEG, virtual copies)
+    -- is ambiguous and refused; such photos are named by localId.
+    local names, wanted = {}, {}
     for _, photo in ipairs( targets ) do
         local id, fileName = photoIdentity( photo )
         names[#names + 1] = fileName ~= "" and fileName or id
-        local found = false
-        for i, entry in ipairs( expected ) do
-            if matchesExpected( entry, id, fileName ) then
-                found = true
-                used[i] = true
-            end
-        end
-        if not found then unmatched = true end
     end
-    local wanted = {}
-    for i, entry in ipairs( expected ) do
-        wanted[#wanted + 1] = tostring( entry )
-        if not used[i] then unmatched = true end
-    end
-    if unmatched then
+    for _, entry in ipairs( expected ) do wanted[#wanted + 1] = tostring( entry ) end
+    local function mismatch( why )
         return nil, { error = "Target mismatch: Lightroom would change [" .. table.concat( names, ", " ) ..
-            "] but expected [" .. table.concat( wanted, ", " ) .. "]" }
+            "] but expected [" .. table.concat( wanted, ", " ) .. "]" .. ( why and ( " (" .. why .. ")" ) or "" ) }
+    end
+    if #expected ~= #targets then return mismatch() end
+    local taken = {}
+    for _, entry in ipairs( expected ) do
+        local byId, byName = {}, {}
+        for i, photo in ipairs( targets ) do
+            local id, fileName = photoIdentity( photo )
+            if tostring( entry ) == id then byId[#byId + 1] = i
+            elseif matchesExpected( entry, id, fileName ) then byName[#byName + 1] = i end
+        end
+        local hits = #byId > 0 and byId or byName
+        if #hits > 1 then
+            return mismatch( tostring( entry ) .. " matches " .. #hits .. " photos; name them by localId" )
+        end
+        if #hits == 0 or taken[hits[1]] then return mismatch() end
+        taken[hits[1]] = true
     end
 
     if params.dryRun == true then
@@ -177,6 +203,21 @@ local function guardWrite( catalog, params, before, after )
         return nil, { dryRun = true, photos = plan }
     end
     return targets
+end
+
+-- Develop values read back: numbers within 0.01; tables (tone curves) by content, not by reference
+local function sameDevelopValue( want, got )
+    if type( want ) == "number" and type( got ) == "number" then return math.abs( got - want ) <= 0.01 end
+    if type( want ) == "table" and type( got ) == "table" then
+        for k, v in pairs( want ) do
+            if not sameDevelopValue( v, got[k] ) then return false end
+        end
+        for k in pairs( got ) do
+            if want[k] == nil then return false end
+        end
+        return true
+    end
+    return want == got
 end
 
 --[[
@@ -461,7 +502,8 @@ function CommandHandlers.set_pick_flag( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { pickFlag = safeGetRawMetadata( p, "pickStatus" ) } end )
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { pickFlag = safeGetRawMetadata( p, "pickStatus" ) } end,
+            function() return { pickFlag = flagValue } end )
         if not targetPhotos then
             return early
         end
@@ -493,7 +535,8 @@ function CommandHandlers.add_keywords( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { keywords = safeGetFormattedMetadata( p, "keywordTags" ) } end )
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { keywords = safeGetFormattedMetadata( p, "keywordTags" ) } end,
+            function( p ) return plannedKeywords( p, params.keywords, true ) end )
         if not targetPhotos then
             return early
         end
@@ -566,7 +609,8 @@ function CommandHandlers.remove_keywords( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { keywords = safeGetFormattedMetadata( p, "keywordTags" ) } end )
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { keywords = safeGetFormattedMetadata( p, "keywordTags" ) } end,
+            function( p ) return plannedKeywords( p, params.keywords, false ) end )
         if not targetPhotos then
             return early
         end
@@ -864,7 +908,8 @@ function CommandHandlers.set_metadata( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { [ tostring( params.field ) ] = safeGetRawMetadata( p, params.field ) } end )
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { [ tostring( params.field ) ] = safeGetRawMetadata( p, params.field ) } end,
+            function() return { [ tostring( params.field ) ] = params.value } end )
         if not targetPhotos then
             return early
         end
@@ -997,13 +1042,7 @@ function CommandHandlers.set_develop_settings( params )
             local now = photo:getDevelopSettings() or {}
             for key, want in pairs( params.settings ) do
                 local got = now[key]
-                local same
-                if type( want ) == "number" and type( got ) == "number" then
-                    same = math.abs( got - want ) <= 0.01
-                else
-                    same = got == want
-                end
-                if not same then
+                if not sameDevelopValue( want, got ) then
                     mismatches[#mismatches + 1] = fileName .. "." .. key .. ": wanted " .. tostring( want ) .. ", got " .. tostring( got )
                 end
             end
@@ -1441,7 +1480,11 @@ function CommandHandlers.set_gps_data( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { gps = safeGetRawMetadata( p, "gps" ), gpsAltitude = safeGetRawMetadata( p, "gpsAltitude" ) } end )
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { gps = safeGetRawMetadata( p, "gps" ), gpsAltitude = safeGetRawMetadata( p, "gpsAltitude" ) } end,
+            function( p )
+                local altitude = type( params.altitude ) == "number" and params.altitude or safeGetRawMetadata( p, "gpsAltitude" )
+                return { gps = { latitude = latitude, longitude = longitude }, gpsAltitude = altitude }
+            end )
         if not targetPhotos then
             return early
         end

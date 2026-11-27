@@ -179,6 +179,12 @@ class WriteContractTests(unittest.TestCase):
         self.assertIn("confirmed", caught.exception.error.message)
         client.send_command.assert_not_called()
 
+    def test_expected_photos_accepts_numeric_local_ids(self):
+        # get_selection returns localId as a number; passing it back must not fail schema validation
+        text = self._call("set_rating", {"rating": 9, "expected_photos": [123], "confirmed": True})
+        self.assertTrue(text.startswith("[InvalidParams] Rating must be between 0 and 5"), text)
+        self.assertEqual(["123", "DSC_0001"], server._write_params({}, [123, "DSC_0001"], True, False)["expected"])
+
     def test_empty_expected_photos_is_refused(self):
         client = MagicMock()
         with self.assertRaises(McpError) as caught:

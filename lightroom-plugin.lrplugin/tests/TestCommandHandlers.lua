@@ -163,6 +163,80 @@ function Tests.test_develop_dry_run_shows_current_values()
     print("PASS")
 end
 
+function Tests.test_one_expected_entry_cannot_approve_two_photos()
+    print("Running test_one_expected_entry_cannot_approve_two_photos...")
+    -- a raw and its JPEG share the base name
+    local raw = Mocks.Photo.new("201", "DSC_0001.NEF")
+    local jpg = Mocks.Photo.new("202", "DSC_0001.JPG")
+    Mocks.state.photos = { raw, jpg }
+    local result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", raw:getRawMetadata("caption"))
+    assertEqual("", jpg:getRawMetadata("caption"))
+    -- the base name twice still names each photo ambiguously
+    result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001", "DSC_0001" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", raw:getRawMetadata("caption"))
+    -- full file names name one photo each
+    result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001.NEF", "DSC_0001.JPG" }, confirmed = true })
+    assertEqual(true, result.success)
+    print("PASS")
+end
+
+function Tests.test_virtual_copies_need_ids()
+    print("Running test_virtual_copies_need_ids...")
+    -- a master and its virtual copy share the file name
+    local master = Mocks.Photo.new("301", "IMG.CR3")
+    local copy = Mocks.Photo.new("302", "IMG.CR3")
+    Mocks.state.photos = { master, copy }
+    local result = CommandHandlers.set_title({ title = "x", expected = { "IMG.CR3" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    result = CommandHandlers.set_title({ title = "x", expected = { "IMG.CR3", "IMG.CR3" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", master:getRawMetadata("title"))
+    assertEqual("", copy:getRawMetadata("title"))
+    result = CommandHandlers.set_title({ title = "x", expected = { "301", "302" }, confirmed = true })
+    assertEqual(true, result.success)
+    assertEqual("x", copy:getRawMetadata("title"))
+    print("PASS")
+end
+
+function Tests.test_dry_run_after_is_the_planned_value_of_the_same_fields()
+    print("Running test_dry_run_after_is_the_planned_value_of_the_same_fields...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    p1:setRawMetadata("keywordTags", "bird, crow")
+    p1:setRawMetadata("pickStatus", 0)
+    p1:setRawMetadata("gpsAltitude", 12)
+    Mocks.state.photos = { p1 }
+    local plan = CommandHandlers.add_keywords({ keywords = { "Animals > fish", "crow" }, expected = { "123" }, dryRun = true })
+    assertEqual("bird, crow", plan.photos[1].before.keywords)
+    assertEqual("bird, crow, fish", plan.photos[1].after.keywords)
+    plan = CommandHandlers.remove_keywords({ keywords = { "crow" }, expected = { "123" }, dryRun = true })
+    assertEqual("bird", plan.photos[1].after.keywords)
+    plan = CommandHandlers.set_pick_flag({ pickFlag = "reject", expected = { "123" }, dryRun = true })
+    assertEqual(0, plan.photos[1].before.pickFlag)
+    assertEqual(-1, plan.photos[1].after.pickFlag)
+    plan = CommandHandlers.set_metadata({ field = "copyright", value = "(c) me", expected = { "123" }, dryRun = true })
+    assertEqual("(c) me", plan.photos[1].after.copyright)
+    assertEqual(nil, plan.photos[1].after.value)
+    plan = CommandHandlers.set_gps_data({ latitude = 10, longitude = 20, expected = { "123" }, dryRun = true })
+    assertEqual(10, plan.photos[1].after.gps.latitude)
+    assertEqual(20, plan.photos[1].after.gps.longitude)
+    assertEqual(12, plan.photos[1].after.gpsAltitude)   -- no altitude given: unchanged
+    assertEqual(nil, p1:getRawMetadata("gps"))
+    assertEqual("bird, crow", p1:getRawMetadata("keywordTags"))
+    print("PASS")
+end
+
+function Tests.test_table_develop_values_read_back_by_content()
+    print("Running test_table_develop_values_read_back_by_content...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    Mocks.state.photos = { p1 }
+    local ok = CommandHandlers.set_develop_settings({ settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } }, expected = { "123" }, confirmed = true })
+    assertEqual(true, ok.success, tostring(ok.error))
+    print("PASS")
+end
+
 function Tests.test_add_to_collection()
     print("Running test_add_to_collection...")
     local p1 = Mocks.Photo.new("123", "test.jpg")
