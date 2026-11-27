@@ -9,6 +9,7 @@ Features:
 - Web UI dashboard
 """
 
+import hmac
 import json
 import logging
 import os
@@ -23,6 +24,8 @@ from typing import Any, Dict, Optional
 
 from flask import Flask, jsonify, request, Response
 from flask_sock import Sock
+
+import broker_auth
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +45,11 @@ REQUEST_TIMEOUT = 30  # seconds
 POLL_TIMEOUT = 0.5  # seconds for long-polling
 LR_CONNECTION_TIMEOUT = 5  # seconds before considering LR disconnected
 WS_PING_INTERVAL = 30  # seconds
+
+# Access token, made by run_broker() and written to broker_auth.discovery_path(). None refuses everything.
+BROKER_TOKEN: Optional[str] = None
+# Relay endpoints that need the token (exact paths); every /api/* path needs it too
+TOKEN_PATHS = {'/request', '/poll', '/response', '/auto_edit'}
 
 # ============================================================================
 # Global State
@@ -240,6 +248,35 @@ def update_lr_connection_status():
 # ============================================================================
 # API Endpoints - Core Relay
 # ============================================================================
+
+def dashboard_origins() -> set:
+    return {f"http://{BROKER_HOST}:{BROKER_PORT}", f"http://localhost:{BROKER_PORT}"}
+
+
+def token_ok(given: Optional[str]) -> bool:
+    return bool(BROKER_TOKEN) and isinstance(given, str) and hmac.compare_digest(given, BROKER_TOKEN)
+
+
+@app.before_request
+def check_access():
+    """Refuse cross-site browser requests, check the dashboard Origin on /ws and the token everywhere else."""
+    path = request.path
+    origin = request.headers.get('Origin')
+    if path == '/ws':
+        # Before the upgrade: only the dashboard page may open the socket (browsers always send Origin)
+        if origin not in dashboard_origins():
+            return jsonify({"error": "Forbidden: /ws accepts only the broker dashboard"}), 403
+        if not token_ok(request.args.get('token')):
+            return jsonify({"error": "Unauthorized"}), 401
+        return None
+    if origin is not None and origin not in dashboard_origins():
+        return jsonify({"error": "Forbidden: cross-origin request"}), 403
+    if path in TOKEN_PATHS or path.startswith('/api/'):
+        if not token_ok(request.headers.get(broker_auth.TOKEN_HEADER)):
+            return jsonify({"error": f"Unauthorized: send the token from {broker_auth.discovery_path()} "
+                                     f"in the {broker_auth.TOKEN_HEADER} header"}), 401
+    return None
+
 
 @app.route('/request', methods=['POST'])
 def handle_request():
@@ -1032,6 +1069,20 @@ DASHBOARD_HTML = r"""
     </div>
 
     <script>
+        // The tray opens this page with #token=...; keep it for this tab and send it with every call
+        const brokerToken = (() => {
+            const m = window.location.hash.match(/token=([^&]+)/);
+            if (m) {
+                sessionStorage.setItem('brokerToken', decodeURIComponent(m[1]));
+                history.replaceState(null, '', window.location.pathname);
+            }
+            return sessionStorage.getItem('brokerToken') || '';
+        })();
+        const plainFetch = window.fetch.bind(window);
+        window.fetch = (url, options = {}) => plainFetch(url, {
+            ...options, headers: { ...(options.headers || {}), 'X-LrC-MCP-Token': brokerToken }
+        });
+
         let ws = null;
         let requests = [];
         let logs = [];
@@ -1040,7 +1091,7 @@ DASHBOARD_HTML = r"""
 
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${encodeURIComponent(brokerToken)}`);
 
             ws.onopen = () => {
                 document.getElementById('ws-status').textContent = 'WS Connected';
@@ -1412,7 +1463,7 @@ def create_tray_icon():
         return image
 
     def on_open_dashboard(icon, item):
-        webbrowser.open(f'http://localhost:{BROKER_PORT}')
+        webbrowser.open(f'http://localhost:{BROKER_PORT}/#token={BROKER_TOKEN}')
 
     def on_exit(icon, item):
         broker_log("INFO", "Exit requested from tray")
@@ -1490,6 +1541,11 @@ def run_broker():
         print(f"       Use the system tray icon or dashboard to exit the existing instance.")
         sys.exit(1)
 
+    # Only after the port check: a second instance must not replace the running broker's token
+    global BROKER_TOKEN
+    BROKER_TOKEN = broker_auth.new_token()
+    discovery = broker_auth.write_discovery(BROKER_TOKEN, BROKER_PORT)
+
     broker_stats["started_at"] = datetime.now(timezone.utc)
 
     # Load history from previous session
@@ -1498,6 +1554,7 @@ def run_broker():
     broker_log("INFO", f"Starting Lightroom MCP Broker")
     broker_log("INFO", f"  HTTP: http://{BROKER_HOST}:{BROKER_PORT}")
     broker_log("INFO", f"  Socket fallback: {BROKER_HOST}:{SOCKET_PORT}")
+    broker_log("INFO", f"  Access token: {discovery}")
 
     # Start tray icon in separate thread
     tray_icon = create_tray_icon()

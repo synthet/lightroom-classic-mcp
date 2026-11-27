@@ -22,6 +22,7 @@ class TestBrokerUnit(unittest.TestCase):
         broker.broker_stats["requests_success"] = 0
         broker.broker_stats["requests_failed"] = 0
         broker.broker_stats["requests_timeout"] = 0
+        broker.BROKER_TOKEN = "unit-token"
 
     def test_update_lr_connection_status(self):
         # Test connection status update logic
@@ -112,14 +113,14 @@ class TestBrokerUnit(unittest.TestCase):
 
     def test_auto_edit_missing_image(self):
         client = broker.app.test_client()
-        res = client.post('/auto_edit', json={})
+        res = client.post('/auto_edit', headers={broker.broker_auth.TOKEN_HEADER: "unit-token"}, json={})
         self.assertEqual(res.status_code, 400)
         data = res.get_json()
         self.assertIn("error", data)
 
     def test_auto_edit_invalid_base64(self):
         client = broker.app.test_client()
-        res = client.post('/auto_edit', json={"image": 12345})
+        res = client.post('/auto_edit', headers={broker.broker_auth.TOKEN_HEADER: "unit-token"}, json={"image": 12345})
         self.assertEqual(res.status_code, 400)
 
     @patch('broker.GeminiAPIProvider')
@@ -141,7 +142,7 @@ class TestBrokerUnit(unittest.TestCase):
         test_img_b64 = base64.b64encode(b"fake-jpeg-data").decode('utf-8')
 
         client = broker.app.test_client()
-        res = client.post('/auto_edit', json={
+        res = client.post('/auto_edit', headers={broker.broker_auth.TOKEN_HEADER: "unit-token"}, json={
             "image": test_img_b64,
             "localId": "123",
             "intent": "clean_commercial"

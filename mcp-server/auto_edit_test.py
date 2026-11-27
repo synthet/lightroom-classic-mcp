@@ -4,6 +4,8 @@ import json
 import os
 import sys
 
+import broker_auth
+
 BROKER_URL = "http://127.0.0.1:8085/auto_edit"
 TEST_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "..", "auto_settings", "tests", "test_images", "sample.jpg")
 
@@ -32,7 +34,8 @@ payload = {
 
 print("Sending request to broker...")
 try:
-    response = requests.post(BROKER_URL, json=payload, timeout=60)
+    response = requests.post(BROKER_URL, json=payload, timeout=60,
+                             headers={broker_auth.TOKEN_HEADER: broker_auth.read_token() or ""})
     print(f"Status Code: {response.status_code}")
     print("Response JSON:")
     print(json.dumps(response.json(), indent=2))

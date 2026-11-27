@@ -13,6 +13,7 @@ from mcp.types import INTERNAL_ERROR, INVALID_PARAMS, ErrorData
 
 class LrcErrorCode:
     BROKER_UNAVAILABLE = "BrokerUnavailable"
+    BROKER_UNAUTHORIZED = "BrokerUnauthorized"
     PLUGIN_DISCONNECTED = "PluginDisconnected"
     LIGHTROOM_TIMEOUT = "LightroomTimeout"
     INVALID_PARAMS = "InvalidParams"
@@ -28,6 +29,7 @@ class LrcErrorCode:
 
 HINTS = {
     LrcErrorCode.BROKER_UNAVAILABLE: "The broker on 127.0.0.1:8085 is not running and could not be started. Run mcp-server/start_broker.py, then retry.",
+    LrcErrorCode.BROKER_UNAUTHORIZED: "The broker refused the access token. Its discovery file (~/.lightroom-classic-mcp/broker.json) is missing or belongs to an older broker. Restart the broker (mcp-server/start_broker.py), then retry.",
     LrcErrorCode.PLUGIN_DISCONNECTED: "The broker runs but the Lightroom plugin is not polling it. Open Lightroom Classic and check File > Plug-in Manager > MCP Bridge is enabled.",
     LrcErrorCode.LIGHTROOM_TIMEOUT: "Lightroom is connected but did not answer in time; it may be busy (import, export, modal dialog). Wait, then retry; for a write, read the photo first to see whether it applied.",
     LrcErrorCode.INVALID_PARAMS: "Fix the arguments as the message says and resend.",

@@ -9,6 +9,7 @@ local LrView = import 'LrView'
 local LrHttp = import 'LrHttp'
 local LrLogger = import 'LrLogger'
 local JSON = require 'JSON'
+local BrokerAuth = require 'BrokerAuth'
 
 local logger = LrLogger( 'MCPBridge' )
 logger:enable( 'print' )
@@ -148,9 +149,9 @@ LrTasks.startAsyncTask(function()
 
     local payloadJson = JSON:encode(payload)
 
-    local headers = {
+    local headers = BrokerAuth.headers( {
         { field = "Content-Type", value = "application/json" }
-    }
+    }, true )
 
     local brokerUrl = "http://127.0.0.1:8085/auto_edit"
 

@@ -206,11 +206,16 @@ Mocks.LrApplication = {
 -- Mock LrPathUtils / LrFileUtils: Mocks.state.files overrides disk reads by path
 Mocks.state.files = {}
 Mocks.LrPathUtils = {
-    child = function( dir, name ) return dir .. "/" .. name end
+    child = function( dir, name ) return dir .. "/" .. name end,
+    getStandardFilePath = function( name )
+        if name == "home" then return "/home/test" end
+        error( "unknown standard path " .. tostring( name ) )
+    end
 }
 Mocks.LrFileUtils = {
     readFile = function( path )
         if Mocks.state.files[path] ~= nil then return Mocks.state.files[path] end
+        if Mocks.state.missing and Mocks.state.missing[path] then error( "file not found: " .. path ) end
         local f = io.open( path, "r" )
         if not f then return nil end
         local text = f:read( "*a" )
