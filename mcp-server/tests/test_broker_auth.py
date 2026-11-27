@@ -85,6 +85,18 @@ class BrokerAccessTests(unittest.TestCase):
         r = self.client.get("/ws", headers={"Origin": f"http://{broker.BROKER_HOST}:{broker.BROKER_PORT}"})
         self.assertEqual(401, r.status_code)
 
+    def test_non_ascii_token_is_refused_not_an_error(self):
+        r = self.client.get("/api/status", headers={HEADER: "t" + chr(0xF6) + "ken"})
+        self.assertEqual(401, r.status_code)
+
+    def test_dashboard_never_navigates_to_the_api(self):
+        # a navigation sends no token header, so it would get 401; the dashboard downloads with fetch
+        self.assertNotIn("location.href = '/api/", broker.DASHBOARD_HTML)
+        self.assertIn("fetch('/api/history/export')", broker.DASHBOARD_HTML)
+
+    def test_dashboard_without_a_token_says_how_to_open_it(self):
+        self.assertIn("Open Dashboard", broker.DASHBOARD_HTML.split("const brokerToken")[1])
+
     def test_dashboard_page_carries_no_secret(self):
         r = self.client.get("/")
         self.assertEqual(200, r.status_code)

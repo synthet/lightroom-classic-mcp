@@ -8,7 +8,7 @@ Bridge between [Adobe Lightroom Classic](https://www.adobe.com/products/photosho
   - Connects to the Broker via Socket (port 8086) or HTTP polling.
 - **MCP Broker** (`mcp-server/broker.py`) — A lightweight Flask server that acts as a bridge.
   - Relays requests between the Python MCP server and the Lua plugin.
-  - Provides a dashboard at `http://localhost:8085`.
+  - Provides a dashboard at `http://localhost:8085`. Open it from the broker's tray icon (**Open Dashboard**) or from the link the broker prints at startup: both carry the access token the dashboard needs.
 - **MCP Server** (`mcp-server/server.py`) — Python [FastMCP](https://github.com/jlowin/fastmcp) server.
   - Exposes Lightroom tools to Cursor/Claude.
   - Communicates with the Broker via HTTP.
@@ -68,7 +68,7 @@ The MCP server handles starting the Broker automatically.
 1. Open **Lightroom Classic**.
 2. **Start the MCP Server** (Cursor does this automatically when you open the project or use the tool).
    - The **Broker** will be started automatically by the MCP server if not running.
-   - You can view the Broker Dashboard at [http://localhost:8085](http://localhost:8085) to see connection status and logs.
+   - You can view the Broker Dashboard to see connection status and logs: use the tray icon's **Open Dashboard**, or the `Dashboard:` link the broker prints at startup (a bare `http://localhost:8085` has no access token).
 3. Select photos in Lightroom.
 4. Use Cursor to interact with your library!
 
@@ -105,7 +105,7 @@ Tool errors start with a code such as `[NoSelection]` or `[PluginDisconnected]` 
 
 
 - **"Lightroom not connected"**:
-  - Check the Broker Dashboard at `http://localhost:8085`.
+  - Check the Broker Dashboard (tray icon > **Open Dashboard**).
   - Ensure the Lightroom Plugin is **Enabled** (Green light in Plug-in Manager).
   - Reload the plugin in Plug-in Manager to force a reconnection attempt.
   - Check `plugin_debug.log` for connection errors.

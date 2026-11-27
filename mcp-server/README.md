@@ -14,7 +14,7 @@ This is the entry point that Cursor attempts to run. It uses `FastMCP` to expose
 A lightweight [Flask](https://flask.palletsprojects.com/) server that acts as a middleman between the ephemeral MCP process and the long-running Lightroom instance.
 - **Port 8085 (HTTP)**: API for `lrc_client` and Web Dashboard.
 - **Port 8086 (Socket)**: Persistent connection for the Lightroom Lua plugin.
-- **Dashboard**: Open [http://localhost:8085](http://localhost:8085) to view logs, request history, and connection status.
+- **Dashboard**: open it from the tray icon (**Open Dashboard**) or from the `Dashboard:` link the broker prints at startup, to view logs, request history, and connection status. Both links carry the access token from `~/.lightroom-classic-mcp/broker.json`; a bare `http://localhost:8085` gets 401 on every call.
 
 ### 3. Client Library (`lrc_client.py`)
 Helper library used by `server.py` to communicate with the Broker.
