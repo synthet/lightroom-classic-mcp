@@ -20,7 +20,7 @@ The SDK is located in `lightroom_SDK/` and includes:
 ### Core Modules
 
 - **LrApplication** - Access to active catalog and application state
-- **LrSocket** - TCP socket communication (port 8086)
+- **LrHttp** - HTTP long polling of the broker (port 8085)
 - **LrTasks** - Asynchronous task management
 - **LrFunctionContext** - Resource lifecycle management
 - **LrLogger** - Logging and debugging
@@ -104,25 +104,13 @@ The plugin uses `photo:getDevelopSettings()` and `photo:applyDevelopSettings()` 
 
 ## Implementation Patterns
 
-### Socket Server Pattern
+### Broker Polling Pattern
 
-The plugin follows the SDK's `remote_control_socket` example pattern:
-
-```lua
-serverSocket = LrSocket.bind {
-    name = "MCP Bridge Server",
-    functionContext = context,
-    address = "localhost",
-    port = 8086,
-    mode = "receive",  -- Server receives messages
-    onConnecting = function(socket, port) ... end,
-    onConnected = function(socket, port) ... end,
-    onMessage = function(socket, message) ... end,
-    onClosed = function(socket) ... end,
-    onError = function(socket, err) ... end,
-    plugin = _PLUGIN
-}
-```
+The plugin polls the broker with `LrHttp.post` (`Server.lua`): `/poll` returns the next request, and the
+answer goes back to `/response`. Each call carries the access token (`BrokerAuth.lua`). While the broker is
+down the plugin keeps polling, waiting at most 2 s between tries. An earlier `LrSocket` fallback on port
+8086 was removed: `LrSocket.bind` listens rather than connects, so it never reached the broker's socket
+server.
 
 ### Lifecycle Management
 
@@ -134,7 +122,7 @@ serverSocket = LrSocket.bind {
 - Implements `LrShutdownFunction` pattern from SDK
 - Signals server to stop via global flag (`_G.mcpServerRunning`)
 - Provides progress feedback during cleanup
-- Ensures socket connections are properly closed
+- Lets the polling loop finish its current request
 
 ### Catalog Operations
 

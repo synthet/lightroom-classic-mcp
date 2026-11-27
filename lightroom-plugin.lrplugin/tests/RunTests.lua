@@ -18,7 +18,8 @@ end
 -- If LuaFileSystem is available, iterate directory, otherwise just run known tests
 local files = {
     "TestCommandHandlers.lua",
-    "TestBrokerAuth.lua"
+    "TestBrokerAuth.lua",
+    "TestServer.lua"
 }
 
 local success = true

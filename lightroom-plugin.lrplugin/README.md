@@ -12,7 +12,7 @@ The plugin connects to the **MCP Broker** (running on localhost) and executes co
 ## Structure
 
 - **`Init.lua`**: Plugin entry point. Starts the async server task.
-- **`Server.lua`**: Manages the socket connection to the Broker (default port 8086).
+- **`Server.lua`**: Polls the Broker over HTTP (port 8085) and sends each answer back.
 - **`CommandHandlers.lua`**: Implementation of specific commands (e.g., `set_rating`, `get_selection`).
 - **`Info.lua`**: Plugin manifest and version info.
 

@@ -97,6 +97,13 @@ class BrokerAccessTests(unittest.TestCase):
     def test_dashboard_without_a_token_says_how_to_open_it(self):
         self.assertIn("Open Dashboard", broker.DASHBOARD_HTML.split("const brokerToken")[1])
 
+    def test_no_socket_fallback(self):
+        # lrcmcp-f7s2r: the unauthenticated socket server on 8086 is gone
+        self.assertFalse(hasattr(broker, "run_socket_server"))
+        self.assertFalse(hasattr(broker, "SOCKET_PORT"))
+        config = self.client.get("/api/config", headers={HEADER: TOKEN}).get_json()
+        self.assertNotIn("socket_port", config)
+
     def test_dashboard_page_carries_no_secret(self):
         r = self.client.get("/")
         self.assertEqual(200, r.status_code)

@@ -1,6 +1,6 @@
 # TourBox and Lightroom
 
-TourBox Console sits between TourBox hardware and Adobe’s apps. This repository does not speak TourBox’s protocol. Its Classic path is `lightroom-plugin.lrplugin`, which connects to the broker on port 8086. See [SDK integration](../SDK_INTEGRATION.md) and the [setup guide](../README.md).
+TourBox Console sits between TourBox hardware and Adobe’s apps. This repository does not speak TourBox’s protocol. Its Classic path is `lightroom-plugin.lrplugin`, which polls the broker over HTTP on port 8085. See [SDK integration](../SDK_INTEGRATION.md) and the [setup guide](../README.md).
 
 Name the evidence class when using a claim from this page: **public docs**, or **unknown** where TourBox and Adobe have not published the mechanism. Local readings of an installed Console build are kept outside this tracked tree.
 
