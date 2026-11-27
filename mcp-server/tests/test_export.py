@@ -70,6 +70,13 @@ class VerifyExportTests(unittest.TestCase):
         self.assertEqual(LrcErrorCode.EXPORT_FAILED, _code(caught.exception))
         self.assertIn("disk full", caught.exception.error.message)
 
+    def test_failed_with_no_recorded_failure_is_export_failed(self):
+        for outputs in ([], [{"path": self._file("a.jpg")}]):
+            job = self._job(outputs, status="failed", photos=[{"localId": "1"}, {"localId": "2"}])
+            with self.assertRaises(McpError) as caught:
+                server.verify_export(job)
+            self.assertEqual(LrcErrorCode.EXPORT_FAILED, _code(caught.exception), outputs)
+
     def test_accepted_and_running_pass_through(self):
         for status in ("accepted", "running"):
             self.assertEqual(status, server.verify_export(self._job([], status=status))["status"])

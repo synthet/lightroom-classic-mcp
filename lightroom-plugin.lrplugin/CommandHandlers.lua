@@ -2367,6 +2367,15 @@ function CommandHandlers.start_export( params )
             if not ok then
                 job.failures[#job.failures + 1] = { message = tostring( err ) }
             end
+            -- A photo Lightroom yielded no rendition for is a failure too, named so the agent can act on it
+            local seen = {}
+            for _, entry in ipairs( job.outputs ) do seen[ entry.localId ] = true end
+            for _, entry in ipairs( job.failures ) do if entry.localId then seen[ entry.localId ] = true end end
+            for _, photo in ipairs( job.photos ) do
+                if not seen[ photo.localId ] then
+                    job.failures[#job.failures + 1] = { localId = photo.localId, fileName = photo.fileName, message = "Lightroom produced no rendition" }
+                end
+            end
             job.status = ( #job.failures == 0 and #job.outputs == #job.photos ) and "rendered" or "failed"
         end )
 

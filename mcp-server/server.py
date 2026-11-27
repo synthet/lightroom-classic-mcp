@@ -200,7 +200,10 @@ def verify_export(job: dict) -> dict:
                 problems.append(f"{path}: output file is empty")
             else:
                 outputs.append({**out, "bytes": os.path.getsize(path), "sha256": _sha256(path)})
-    elif status != "failed":
+    elif status == "failed":
+        if not problems:
+            problems.append("Lightroom reported the export as failed without naming a cause")
+    else:
         problems.append(f"unknown job status {status!r}")
     if problems:
         raise tool_error(LrcErrorCode.EXPORT_FAILED, f"Export {job_id} failed: " + "; ".join(problems),

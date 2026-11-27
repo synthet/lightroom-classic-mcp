@@ -251,6 +251,7 @@ Mocks.LrExportSession = function( args )
     function session:renditions()
         local list = {}
         for _, photo in ipairs( args.photosToExport ) do
+          if not ( Mocks.state.exportSkip and Mocks.state.exportSkip[tostring( photo.localIdentifier )] ) then
             local rendition = { photo = photo }
             function rendition:waitForRender()
                 local failure = Mocks.state.exportFailures and Mocks.state.exportFailures[tostring( photo.localIdentifier )]
@@ -259,6 +260,7 @@ Mocks.LrExportSession = function( args )
                 return true, args.exportSettings.LR_export_destinationPathPrefix .. "/" .. base .. ".jpg"
             end
             list[#list + 1] = rendition
+          end
         end
         return ipairs( list )
     end

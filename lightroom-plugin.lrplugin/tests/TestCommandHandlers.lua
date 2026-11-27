@@ -279,6 +279,23 @@ function Tests.test_export_failure_is_reported()
     print("PASS")
 end
 
+function Tests.test_missing_renditions_are_failures()
+    print("Running test_missing_renditions_are_failures...")
+    local p1 = Mocks.Photo.new("505", "DSC_0505.NEF")
+    local p2 = Mocks.Photo.new("506", "DSC_0506.NEF")
+    Mocks.state.photos = { p1, p2 }
+    Mocks.state.dirs = { ["D:/out"] = true }
+    Mocks.state.deferTasks = nil
+    Mocks.state.exportSkip = { ["506"] = true }   -- Lightroom yields no rendition for this photo
+    local started = CommandHandlers.start_export({ destination = "D:/out", expected = { "505", "506" }, confirmed = true })
+    Mocks.state.exportSkip = nil
+    local job = CommandHandlers.get_export_status({ jobId = started.jobId })
+    assertEqual("failed", job.status)
+    assertEqual(1, #job.failures)
+    assertEqual("DSC_0506.NEF", job.failures[1].fileName)
+    print("PASS")
+end
+
 function Tests.test_export_checks_its_arguments_and_the_contract()
     print("Running test_export_checks_its_arguments_and_the_contract...")
     local p1 = Mocks.Photo.new("504", "DSC_0504.NEF")
