@@ -36,6 +36,15 @@ def auth_headers() -> Dict[str, str]:
     token = broker_auth.read_token()
     return {broker_auth.TOKEN_HEADER: token} if token else {}
 REQUEST_TIMEOUT = int(os.environ.get("LRC_REQUEST_TIMEOUT", "35"))  # Slightly longer than broker's internal timeout
+BROKER_START_POLL = 0.25  # seconds between readiness checks while the broker starts
+
+
+def broker_start_timeout() -> float:
+    """Seconds to wait for a freshly started broker; LRC_BROKER_START_TIMEOUT overrides the default 20."""
+    try:
+        return max(1.0, float(os.environ.get("LRC_BROKER_START_TIMEOUT", "20")))
+    except ValueError:
+        return 20.0
 
 
 class LrCClient:
@@ -74,15 +83,21 @@ class LrCClient:
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
             )
 
-            # Wait for broker to start
-            for _ in range(10):
-                time.sleep(0.5)
+            # Wait for the broker to answer; a cold start (imports, tray icon, history load) can take seconds
+            timeout = broker_start_timeout()
+            started = time.monotonic()
+            while True:
+                time.sleep(BROKER_START_POLL)
+                elapsed = time.monotonic() - started
                 if self._ensure_broker_running():
-                    logger.info("Broker started successfully")
+                    logger.info(f"Broker ready after {elapsed:.1f} s")
                     return True
-
-            logger.error("Broker failed to start within timeout")
-            return False
+                if self._broker_process.poll() is not None:
+                    logger.error(f"Broker exited with code {self._broker_process.returncode} after {elapsed:.1f} s")
+                    return False
+                if elapsed >= timeout:
+                    logger.error(f"Broker not ready after {elapsed:.1f} s (timeout {timeout:.1f} s; set LRC_BROKER_START_TIMEOUT)")
+                    return False
 
         except Exception as e:
             logger.error(f"Failed to start broker: {e}")
