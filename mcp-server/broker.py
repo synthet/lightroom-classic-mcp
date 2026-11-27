@@ -254,7 +254,9 @@ def dashboard_origins() -> set:
 
 
 def token_ok(given: Optional[str]) -> bool:
-    return bool(BROKER_TOKEN) and isinstance(given, str) and hmac.compare_digest(given, BROKER_TOKEN)
+    # Compare bytes: compare_digest raises on non-ASCII str, which would turn a refusal into a 500
+    return (bool(BROKER_TOKEN) and isinstance(given, str)
+            and hmac.compare_digest(given.encode('utf-8'), BROKER_TOKEN.encode('utf-8')))
 
 
 @app.before_request
@@ -1078,6 +1080,13 @@ DASHBOARD_HTML = r"""
             }
             return sessionStorage.getItem('brokerToken') || '';
         })();
+        if (!brokerToken) {
+            const note = document.createElement('div');
+            note.textContent = 'No access token: open this page from the broker tray icon (Open Dashboard) ' +
+                'or from the dashboard link the broker prints when it starts.';
+            note.style.cssText = 'background:#b45309;color:#fff;padding:10px 14px;margin-bottom:16px;border-radius:6px;font-weight:600';
+            document.body.prepend(note);
+        }
         const plainFetch = window.fetch.bind(window);
         window.fetch = (url, options = {}) => plainFetch(url, {
             ...options, headers: { ...(options.headers || {}), 'X-LrC-MCP-Token': brokerToken }
@@ -1348,7 +1357,14 @@ DASHBOARD_HTML = r"""
         }
 
         function exportHistory() {
-            window.location.href = '/api/history/export';
+            // fetch, not a navigation: a navigation sends no token header
+            fetch('/api/history/export').then(r => r.blob()).then(blob => {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'broker_history.json';
+                link.click();
+                URL.revokeObjectURL(link.href);
+            });
         }
 
         function clearHistory() {
@@ -1555,6 +1571,8 @@ def run_broker():
     broker_log("INFO", f"  HTTP: http://{BROKER_HOST}:{BROKER_PORT}")
     broker_log("INFO", f"  Socket fallback: {BROKER_HOST}:{SOCKET_PORT}")
     broker_log("INFO", f"  Access token: {discovery}")
+    # Console only (not the broker log, which /api/logs serves): the dashboard link with its token
+    print(f"Dashboard: http://localhost:{BROKER_PORT}/#token={BROKER_TOKEN}")
 
     # Start tray icon in separate thread
     tray_icon = create_tray_icon()

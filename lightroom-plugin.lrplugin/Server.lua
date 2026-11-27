@@ -124,6 +124,12 @@ local function runHttpMode( headers )
                         "POST",
                         10
                     )
+                    if sendHeaders and sendHeaders.status == 401 then
+                        -- The broker restarted between our poll and this answer: reread the token, resend once
+                        logToFile( "Broker refused the token on /response; rereading and resending" )
+                        authHeaders = BrokerAuth.headers( headers, true )
+                        sendBody, sendHeaders = LrHttp.post( BROKER_URL .. "/response", responseJson, authHeaders, "POST", 10 )
+                    end
 
                     if sendBody then
                         logToFile( "Response sent successfully" )
