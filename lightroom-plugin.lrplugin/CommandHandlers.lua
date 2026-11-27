@@ -11,6 +11,7 @@ local LrTasks = import 'LrTasks'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrExportSession = import 'LrExportSession'
 
 local logger = LrLogger( 'MCPBridge' )
 logger:enable( 'print' )
@@ -2277,6 +2278,122 @@ function CommandHandlers.rotate_photo( params )
         end )
 
         return { success = true }
+    end )
+end
+
+--------------------------------------------------------------------------------
+-- Export jobs (docs/tools.md#export-job): start_export returns at once with a job id and the export
+-- runs in an async task; get_export_status reports accepted, running, rendered or failed. The MCP
+-- server checks the files of a rendered job before it reports completed. Jobs live in memory only.
+
+local exportJobs, exportJobCount = {}, 0
+local EXPORT_FORMATS = { JPEG = "JPEG", TIFF = "TIFF", DNG = "DNG", ORIGINAL = "ORIGINAL" }
+
+function CommandHandlers.start_export( params )
+    return safeCall( function()
+        if not params or type( params.destination ) ~= "string" or params.destination == "" then
+            return { error = "Invalid destination parameter - give an existing folder" }
+        end
+        if LrFileUtils.exists( params.destination ) ~= "directory" then
+            return { error = "Invalid destination parameter - folder does not exist: " .. params.destination }
+        end
+        local format = EXPORT_FORMATS[ tostring( params.format or "JPEG" ):upper() ]
+        if not format then
+            return { error = "Invalid format parameter - must be JPEG, TIFF, DNG or ORIGINAL" }
+        end
+        local quality = tonumber( params.quality or 90 )
+        if not quality or quality < 1 or quality > 100 then
+            return { error = "Invalid quality parameter - must be between 1 and 100" }
+        end
+        local maxLongEdge = params.maxLongEdge and tonumber( params.maxLongEdge )
+        if params.maxLongEdge and ( not maxLongEdge or maxLongEdge < 1 ) then
+            return { error = "Invalid maxLongEdge parameter - must be a positive number of pixels" }
+        end
+
+        local catalog = LrApplication.activeCatalog()
+        if not catalog then
+            return { error = "No active catalog" }
+        end
+
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return {} end,
+            function() return { destination = params.destination, format = format } end )
+        if not targetPhotos then
+            return early
+        end
+
+        local settings = {
+            LR_export_destinationType = "specificFolder",
+            LR_export_destinationPathPrefix = params.destination,
+            LR_export_useSubfolder = false,
+            LR_collisionHandling = "rename",
+            LR_format = format,
+            LR_jpeg_quality = quality / 100,
+            LR_reimportExportedPhoto = false,
+        }
+        if maxLongEdge then
+            settings.LR_size_doConstrain = true
+            settings.LR_size_resizeType = "longEdge"
+            settings.LR_size_maxWidth = maxLongEdge
+            settings.LR_size_maxHeight = maxLongEdge
+            settings.LR_size_units = "pixels"
+        end
+
+        exportJobCount = exportJobCount + 1
+        local job = {
+            jobId = "export-" .. tostring( os.time() ) .. "-" .. tostring( exportJobCount ),
+            status = "accepted",
+            destination = params.destination,
+            format = format,
+            photos = describePhotos( targetPhotos ),
+            outputs = {},
+            failures = {},
+        }
+        exportJobs[ job.jobId ] = job
+
+        LrTasks.startAsyncTask( function()
+            job.status = "running"
+            local ok, err = LrTasks.pcall( function()
+                local session = LrExportSession { photosToExport = targetPhotos, exportSettings = settings }
+                for _, rendition in session:renditions() do
+                    local rendered, pathOrMessage = rendition:waitForRender()
+                    local id, fileName = photoIdentity( rendition.photo )
+                    if rendered then
+                        job.outputs[#job.outputs + 1] = { localId = id, fileName = fileName, path = pathOrMessage }
+                    else
+                        job.failures[#job.failures + 1] = { localId = id, fileName = fileName, message = tostring( pathOrMessage ) }
+                    end
+                end
+            end )
+            if not ok then
+                job.failures[#job.failures + 1] = { message = tostring( err ) }
+            end
+            -- A photo Lightroom yielded no rendition for is a failure too, named so the agent can act on it
+            local seen = {}
+            for _, entry in ipairs( job.outputs ) do seen[ entry.localId ] = true end
+            for _, entry in ipairs( job.failures ) do if entry.localId then seen[ entry.localId ] = true end end
+            for _, photo in ipairs( job.photos ) do
+                if not seen[ photo.localId ] then
+                    job.failures[#job.failures + 1] = { localId = photo.localId, fileName = photo.fileName, message = "Lightroom produced no rendition" }
+                end
+            end
+            job.status = ( #job.failures == 0 and #job.outputs == #job.photos ) and "rendered" or "failed"
+        end )
+
+        return { jobId = job.jobId, status = job.status, photos = job.photos, destination = job.destination, format = format }
+    end )
+end
+
+function CommandHandlers.get_export_status( params )
+    return safeCall( function()
+        local jobId = params and params.jobId and tostring( params.jobId )
+        local job = jobId and exportJobs[ jobId ]
+        if not job then
+            return { error = "Export job not found: " .. tostring( jobId ) }
+        end
+        return {
+            jobId = job.jobId, status = job.status, destination = job.destination, format = job.format,
+            photos = job.photos, outputs = job.outputs, failures = job.failures,
+        }
     end )
 end
 

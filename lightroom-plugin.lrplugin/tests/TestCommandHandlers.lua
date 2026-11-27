@@ -237,6 +237,94 @@ function Tests.test_table_develop_values_read_back_by_content()
     print("PASS")
 end
 
+function Tests.test_start_export_returns_a_job_and_runs_async()
+    print("Running test_start_export_returns_a_job_and_runs_async...")
+    local p1 = Mocks.Photo.new("501", "DSC_0501.NEF")
+    Mocks.state.photos = { p1 }
+    Mocks.state.dirs = { ["D:/out"] = true }
+    Mocks.state.deferTasks = {}
+    local started = CommandHandlers.start_export({ destination = "D:/out", format = "JPEG", quality = 85, expected = { "501" }, confirmed = true })
+    assert(started.jobId, tostring(started.error))
+    assertEqual("accepted", started.status)   -- returned before the export ran
+    assertEqual(1, #Mocks.state.deferTasks)
+    assertEqual("accepted", CommandHandlers.get_export_status({ jobId = started.jobId }).status)
+    Mocks.runDeferredTasks()
+    local done = CommandHandlers.get_export_status({ jobId = started.jobId })
+    assertEqual("rendered", done.status)
+    assertEqual(1, #done.outputs)
+    assertEqual("D:/out/DSC_0501.jpg", done.outputs[1].path)
+    assertEqual("501", done.outputs[1].localId)
+    local s = Mocks.state.lastExportSettings
+    assertEqual("JPEG", s.LR_format)
+    assertEqual("D:/out", s.LR_export_destinationPathPrefix)
+    assertEqual(0.85, s.LR_jpeg_quality)
+    print("PASS")
+end
+
+function Tests.test_export_failure_is_reported()
+    print("Running test_export_failure_is_reported...")
+    local p1 = Mocks.Photo.new("502", "DSC_0502.NEF")
+    local p2 = Mocks.Photo.new("503", "DSC_0503.NEF")
+    Mocks.state.photos = { p1, p2 }
+    Mocks.state.dirs = { ["D:/out"] = true }
+    Mocks.state.deferTasks = nil
+    Mocks.state.exportFailures = { ["503"] = "disk full" }
+    local started = CommandHandlers.start_export({ destination = "D:/out", expected = { "502", "503" }, confirmed = true })
+    Mocks.state.exportFailures = nil
+    local job = CommandHandlers.get_export_status({ jobId = started.jobId })
+    assertEqual("failed", job.status)
+    assertEqual(1, #job.outputs)
+    assertEqual("disk full", job.failures[1].message)
+    assertEqual("DSC_0503.NEF", job.failures[1].fileName)
+    print("PASS")
+end
+
+function Tests.test_missing_renditions_are_failures()
+    print("Running test_missing_renditions_are_failures...")
+    local p1 = Mocks.Photo.new("505", "DSC_0505.NEF")
+    local p2 = Mocks.Photo.new("506", "DSC_0506.NEF")
+    Mocks.state.photos = { p1, p2 }
+    Mocks.state.dirs = { ["D:/out"] = true }
+    Mocks.state.deferTasks = nil
+    Mocks.state.exportSkip = { ["506"] = true }   -- Lightroom yields no rendition for this photo
+    local started = CommandHandlers.start_export({ destination = "D:/out", expected = { "505", "506" }, confirmed = true })
+    Mocks.state.exportSkip = nil
+    local job = CommandHandlers.get_export_status({ jobId = started.jobId })
+    assertEqual("failed", job.status)
+    assertEqual(1, #job.failures)
+    assertEqual("DSC_0506.NEF", job.failures[1].fileName)
+    print("PASS")
+end
+
+function Tests.test_export_checks_its_arguments_and_the_contract()
+    print("Running test_export_checks_its_arguments_and_the_contract...")
+    local p1 = Mocks.Photo.new("504", "DSC_0504.NEF")
+    Mocks.state.photos = { p1 }
+    Mocks.state.dirs = { ["D:/out"] = true }
+    Mocks.state.deferTasks = {}
+    local r = CommandHandlers.start_export({ expected = { "504" }, confirmed = true })
+    assert(r.error and r.error:find("^Invalid destination"), tostring(r.error))
+    r = CommandHandlers.start_export({ destination = "D:/missing", expected = { "504" }, confirmed = true })
+    assert(r.error and r.error:find("^Invalid destination"), tostring(r.error))
+    r = CommandHandlers.start_export({ destination = "D:/out", format = "GIF", expected = { "504" }, confirmed = true })
+    assert(r.error and r.error:find("^Invalid format"), tostring(r.error))
+    r = CommandHandlers.start_export({ destination = "D:/out", expected = { "504" } })
+    assert(r.error and r.error:find("^Invalid confirmed"), tostring(r.error))
+    r = CommandHandlers.start_export({ destination = "D:/out", expected = { "999" }, confirmed = true })
+    assert(r.error and r.error:find("^Target mismatch"), tostring(r.error))
+    r = CommandHandlers.start_export({ destination = "D:/out", expected = { "504" }, dryRun = true })
+    assertEqual(true, r.dryRun)
+    assertEqual(0, #Mocks.state.deferTasks)   -- nothing was started
+    print("PASS")
+end
+
+function Tests.test_unknown_export_job_is_not_found()
+    print("Running test_unknown_export_job_is_not_found...")
+    local r = CommandHandlers.get_export_status({ jobId = "export-nope" })
+    assert(r.error and r.error:find("not found"), tostring(r.error))
+    print("PASS")
+end
+
 function Tests.test_add_to_collection()
     print("Running test_add_to_collection...")
     local p1 = Mocks.Photo.new("123", "test.jpg")

@@ -16,6 +16,7 @@ Every tool failure reaches the client as text that starts with `[<Code>]`, then 
 | `PluginError` | The plugin reported another error | See the message and `plugin_debug.log` |
 | `TargetMismatch` | A write's `expected_photos` doesn't match the selected photos exactly (see [tools.md](tools.md#write-contract)); nothing was written | Call `get_selection` and resend with all selected ids or file names, or select the right photos |
 | `ReadbackMismatch` | After `set_develop_settings`, a value didn't read back as written (out of range, or changed by something else) | Call `get_develop_settings`, then retry |
+| `ExportFailed` | An export job finished without every expected output: a photo didn't render, or a file is missing or empty (see [tools.md](tools.md#export-job)) | Fix the cause the message names (disk space, destination), then start the export again |
 | `InternalError` | Anything unexpected in the server | See the message and `mcp_debug.log` |
 
 Before this list existed, a plugin handler that couldn't act (for example "No photos selected") returned its error inside a normal result, and write tools reported "Success". The server now treats any result of the form `{"error": "..."}` as a failure with the matching code.

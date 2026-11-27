@@ -155,6 +155,106 @@ async def get_selection(ctx: Context[ServerSession, AppContext]) -> Any:
     except Exception as e:
         raise as_tool_error(e)
 
+EXPORT_FORMATS = ("JPEG", "TIFF", "DNG", "ORIGINAL")
+
+
+def _plugin_result(lrc: LrCClient, method: str, params: dict) -> Any:
+    """Send a command and return its result; plugin errors become typed tool errors."""
+    try:
+        result = lrc.send_command(method, params)
+    except McpError:
+        raise
+    except Exception as e:
+        raise as_tool_error(e)
+    if result and "result" in result:
+        return result["result"]
+    raise tool_error(LrcErrorCode.PLUGIN_DISCONNECTED, "No response from Lightroom.")
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_export(job: dict) -> dict:
+    """Turn the plugin's job state into the tool's: completed only when every output exists, is non-empty
+    and is hashed; ExportFailed otherwise. accepted and running pass through (docs/tools.md#export-job)."""
+    status = job.get("status")
+    if status in ("accepted", "running"):
+        return job
+    job_id = job.get("jobId")
+    problems = [f"{f.get('fileName') or f.get('localId') or 'export'}: {f.get('message')}" for f in job.get("failures") or []]
+    outputs = []
+    if status == "rendered":
+        photos, rendered = job.get("photos") or [], job.get("outputs") or []
+        if len(rendered) != len(photos):
+            problems.append(f"{len(rendered)} of {len(photos)} photos rendered")
+        for out in rendered:
+            path = out.get("path") or ""
+            if not os.path.isfile(path):
+                problems.append(f"{path or out.get('fileName')}: output file is missing")
+            elif os.path.getsize(path) == 0:
+                problems.append(f"{path}: output file is empty")
+            else:
+                outputs.append({**out, "bytes": os.path.getsize(path), "sha256": _sha256(path)})
+    elif status == "failed":
+        if not problems:
+            problems.append("Lightroom reported the export as failed without naming a cause")
+    else:
+        problems.append(f"unknown job status {status!r}")
+    if problems:
+        raise tool_error(LrcErrorCode.EXPORT_FAILED, f"Export {job_id} failed: " + "; ".join(problems),
+                         details={"jobId": job_id, "status": status, "failures": job.get("failures"), "outputs": job.get("outputs")})
+    return {**job, "status": "completed", "outputs": outputs}
+
+
+@mcp.tool(annotations={"destructive": False})
+async def start_export(destination: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext],
+                       format: str = "JPEG", quality: int = 90, max_long_edge: Optional[int] = None,
+                       confirmed: bool = False, dry_run: bool = False) -> Any:
+    """
+    Start exporting the selected photos to an existing folder. Returns at once with a job id; poll
+    get_export_status until it reports completed (docs/tools.md#export-job).
+
+    Args:
+        destination: An existing folder; files go straight into it.
+        format: JPEG (default), TIFF, DNG or ORIGINAL.
+        quality: JPEG quality 1-100.
+        max_long_edge: Optional resize limit in pixels.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos to export. confirmed must be true. dry_run=true returns the plan and exports nothing.
+    """
+    fmt = (format or "").upper()
+    if fmt not in EXPORT_FORMATS:
+        raise tool_error(LrcErrorCode.INVALID_PARAMS, f"format must be one of {', '.join(EXPORT_FORMATS)}.")
+    if not (1 <= quality <= 100):
+        raise tool_error(LrcErrorCode.INVALID_PARAMS, "quality must be between 1 and 100.")
+    if max_long_edge is not None and max_long_edge < 1:
+        raise tool_error(LrcErrorCode.INVALID_PARAMS, "max_long_edge must be a positive number of pixels.")
+    folder = os.path.abspath(destination)
+    if not os.path.isdir(folder):
+        raise tool_error(LrcErrorCode.INVALID_PARAMS, f"destination must be an existing folder: {folder}")
+    params = {"destination": folder, "format": fmt, "quality": quality}
+    if max_long_edge is not None:
+        params["maxLongEdge"] = max_long_edge
+    lrc = ctx.request_context.lifespan_context.lrc
+    return _plugin_result(lrc, "start_export", _write_params(params, expected_photos, confirmed, dry_run))
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def get_export_status(job_id: str, ctx: Context[ServerSession, AppContext]) -> Any:
+    """
+    Report an export job: accepted, running or completed. completed means every output file exists,
+    is non-empty and has a SHA-256 in the result; anything else fails with ExportFailed.
+    """
+    lrc = ctx.request_context.lifespan_context.lrc
+    return verify_export(_plugin_result(lrc, "get_export_status", {"jobId": job_id}))
+
+
 @mcp.tool(annotations={"destructive": True})
 async def set_rating(rating: int, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """

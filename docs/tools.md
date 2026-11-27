@@ -32,3 +32,42 @@ Typical use:
 3. Resend with `confirmed: true` and without `dry_run`.
 
 Not covered yet: `apply_develop_preset`, `create_snapshot`, `create_virtual_copy`, `rotate_photo` and `add_to_collection` still act on the selection without this contract.
+
+## Export job
+
+Exports run as a job, so no tool call waits on Lightroom's renderer. Both names are proposals from
+lrcmcp-s7ccv and may change.
+
+### `start_export`
+
+Starts exporting the selected photos and returns at once with a job id. The export runs in an async
+Lightroom task (`LrExportSession`). It follows the [write contract](#write-contract): it writes files, so
+it needs `expected_photos` and `confirmed`, and `dry_run` previews the plan.
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `destination` | string | yes | An existing folder. Files go straight into it; a name that exists gets a numbered suffix. |
+| `expected_photos` | list of string or int | yes | As in the write contract. |
+| `format` | string | no | `JPEG` (default), `TIFF`, `DNG` or `ORIGINAL`. |
+| `quality` | int | no | JPEG quality 1-100, default 90. |
+| `max_long_edge` | int | no | Resize so the long edge is at most this many pixels. |
+| `confirmed` | bool | to export | As in the write contract. |
+| `dry_run` | bool | no | As in the write contract. |
+
+Result: `{"jobId", "status": "accepted", "photos": [{"localId", "fileName"}], "destination", "format"}`.
+
+### `get_export_status`
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `job_id` | string | yes | The `jobId` from `start_export`. |
+
+Result: `{"jobId", "status", "photos", "outputs", "failures"}`, where `status` is one of:
+- `accepted`: queued, not started yet.
+- `running`: Lightroom is rendering.
+- `completed`: every photo rendered, and every output file exists and is non-empty. Each entry in
+  `outputs` then has `path`, `bytes` and `sha256`.
+
+Anything else fails with `ExportFailed`, naming each photo that didn't render and each output that is
+missing or empty. Unknown job ids fail with `NotFound`. Jobs live in the plugin's memory, so a plugin
+reload or a Lightroom restart forgets them.

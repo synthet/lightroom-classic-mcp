@@ -24,6 +24,7 @@ class LrcErrorCode:
     PLUGIN_ERROR = "PluginError"
     TARGET_MISMATCH = "TargetMismatch"
     READBACK_MISMATCH = "ReadbackMismatch"
+    EXPORT_FAILED = "ExportFailed"
     INTERNAL = "InternalError"
 
 
@@ -40,6 +41,7 @@ HINTS = {
     LrcErrorCode.PLUGIN_ERROR: "The plugin reported an error; see the message and plugin_debug.log.",
     LrcErrorCode.TARGET_MISMATCH: "The selected photos are not exactly the ones in expected_photos. Call get_selection, then resend with all selected ids or file names (or select the right photos first).",
     LrcErrorCode.READBACK_MISMATCH: "A develop value did not read back as written (out of range, or another controller changed it). Call get_develop_settings, then retry.",
+    LrcErrorCode.EXPORT_FAILED: "The export did not produce every expected file. See the message for each photo or file; fix the cause (disk space, destination folder) and start the export again.",
     LrcErrorCode.INTERNAL: "Unexpected server error; see the message and mcp_debug.log.",
 }
 
