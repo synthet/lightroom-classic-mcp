@@ -31,6 +31,7 @@ function import( name )
     if name == 'LrFunctionContext' then return Mocks.LrFunctionContext end
     if name == 'LrPathUtils' then return Mocks.LrPathUtils end
     if name == 'LrFileUtils' then return Mocks.LrFileUtils end
+    if name == 'LrExportSession' then return Mocks.LrExportSession end
     return {}
 end
 
@@ -52,7 +53,12 @@ Mocks.LrTasks = {
         return pcall( func, ... )
     end,
     startAsyncTask = function( func )
-        func()
+        -- With Mocks.state.deferTasks set (a list), tasks wait for Mocks.runDeferredTasks()
+        if Mocks.state.deferTasks then
+            table.insert( Mocks.state.deferTasks, func )
+        else
+            func()
+        end
     end,
     sleep = function() end,
     yield = function() end
@@ -223,6 +229,41 @@ Mocks.LrFileUtils = {
         return text
     end
 }
+
+function Mocks.runDeferredTasks()
+    local tasks = Mocks.state.deferTasks or {}
+    Mocks.state.deferTasks = nil
+    for _, task in ipairs( tasks ) do task() end
+end
+
+-- Folders that exist, for LrFileUtils.exists
+Mocks.state.dirs = {}
+Mocks.LrFileUtils.exists = function( path )
+    if Mocks.state.dirs[path] then return "directory" end
+    if Mocks.state.files[path] ~= nil then return "file" end
+    return false
+end
+
+-- Mock LrExportSession: one rendition per photo; Mocks.state.exportFailures[localId] = message fails it
+Mocks.LrExportSession = function( args )
+    Mocks.state.lastExportSettings = args.exportSettings
+    local session = {}
+    function session:renditions()
+        local list = {}
+        for _, photo in ipairs( args.photosToExport ) do
+            local rendition = { photo = photo }
+            function rendition:waitForRender()
+                local failure = Mocks.state.exportFailures and Mocks.state.exportFailures[tostring( photo.localIdentifier )]
+                if failure then return false, failure end
+                local base = photo.metadata.fileName:match( "^(.*)%.[^%.]+$" ) or photo.metadata.fileName
+                return true, args.exportSettings.LR_export_destinationPathPrefix .. "/" .. base .. ".jpg"
+            end
+            list[#list + 1] = rendition
+        end
+        return ipairs( list )
+    end
+    return session
+end
 
 -- Plugin global; tests run from the tests folder
 _PLUGIN = { path = ".." }
