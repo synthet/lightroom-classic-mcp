@@ -99,6 +99,18 @@ lightroom-classic-mcp/
     └── ...
 ```
 
+## Tests
+
+CI runs both suites on every push to `master` and on pull requests (`.github/workflows/ci.yml`). To run them locally:
+
+```bash
+# Lua plugin tests (Lua 5.1, mocked Lightroom SDK)
+cd lightroom-plugin.lrplugin/tests && lua RunTests.lua
+
+# mcp-server tests; the repository root on PYTHONPATH makes the auto_settings submodule importable
+cd mcp-server && PYTHONPATH=.. python -m unittest discover -s tests
+```
+
 ## Troubleshooting
 
 Tool errors start with a code such as `[NoSelection]` or `[PluginDisconnected]` and a recovery hint; see [docs/errors.md](docs/errors.md).
