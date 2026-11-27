@@ -92,6 +92,134 @@ local function readPluginVersion()
     return "unknown"
 end
 
+--------------------------------------------------------------------------------
+-- Write contract (docs/tools.md): every write names the photos it expects to
+-- change (ids or file names, all of them) and is confirmed; dryRun previews.
+
+local function photoIdentity( photo )
+    return tostring( photo.localIdentifier ), safeGetFormattedMetadata( photo, "fileName" ) or ""
+end
+
+local function matchesExpected( entry, id, fileName )
+    local wanted = tostring( entry ):lower()
+    local name = fileName:lower()
+    return wanted == id or wanted == name or wanted == ( name:match( "^(.*)%.[^%.]+$" ) or name )
+end
+
+local function describePhotos( photos )
+    local list = {}
+    for _, photo in ipairs( photos ) do
+        local id, fileName = photoIdentity( photo )
+        list[#list + 1] = { localId = id, fileName = fileName }
+    end
+    return list
+end
+
+-- The requested values: the params without the contract fields
+local function requested( params )
+    local values = {}
+    for key, value in pairs( params ) do
+        if key ~= "expected" and key ~= "confirmed" and key ~= "dryRun" then values[key] = value end
+    end
+    return values
+end
+
+-- Keyword names as keywordTags shows them: leaf names, comma separated
+local function plannedKeywords( photo, keywords, add )
+    local list = {}
+    for name in tostring( safeGetFormattedMetadata( photo, "keywordTags" ) or "" ):gmatch( "[^,]+" ) do
+        name = name:match( "^%s*(.-)%s*$" )
+        if name ~= "" then list[#list + 1] = name end
+    end
+    for _, path in ipairs( keywords ) do
+        local leaf = tostring( path )
+        for part in tostring( path ):gmatch( "[^>]+" ) do leaf = part end
+        leaf = leaf:match( "^%s*(.-)%s*$" )
+        local at
+        for i, name in ipairs( list ) do if name == leaf then at = i end end
+        if add and not at then list[#list + 1] = leaf
+        elseif not add and at then table.remove( list, at ) end
+    end
+    return { keywords = table.concat( list, ", " ) }
+end
+
+-- Returns the target photos when the write may run. Otherwise returns nil and a result to send
+-- back as is: an error, or with dryRun the plan { dryRun, photos = { localId, fileName, before, after } }.
+-- before( photo ) gives the current values; after( photo ) the planned ones (default: requested( params )).
+local function guardWrite( catalog, params, before, after )
+    local targets = catalog:getTargetPhotos()
+    if not targets or #targets == 0 then
+        return nil, { error = "No photos selected" }
+    end
+    local expected = params.expected
+    if type( expected ) ~= "table" or #expected == 0 then
+        return nil, { error = "Invalid expected parameter - list the ids or file names of the photos to change" }
+    end
+    if params.dryRun ~= true and params.confirmed ~= true then
+        return nil, { error = "Invalid confirmed parameter - writes need confirmed = true; preview with dryRun first" }
+    end
+
+    -- Match one to one: every expected entry names exactly one selected photo, no photo twice, and
+    -- the counts agree. A name or base name shared by several photos (raw + JPEG, virtual copies)
+    -- is ambiguous and refused; such photos are named by localId.
+    local names, wanted = {}, {}
+    for _, photo in ipairs( targets ) do
+        local id, fileName = photoIdentity( photo )
+        names[#names + 1] = fileName ~= "" and fileName or id
+    end
+    for _, entry in ipairs( expected ) do wanted[#wanted + 1] = tostring( entry ) end
+    local function mismatch( why )
+        return nil, { error = "Target mismatch: Lightroom would change [" .. table.concat( names, ", " ) ..
+            "] but expected [" .. table.concat( wanted, ", " ) .. "]" .. ( why and ( " (" .. why .. ")" ) or "" ) }
+    end
+    if #expected ~= #targets then return mismatch() end
+    local taken = {}
+    for _, entry in ipairs( expected ) do
+        local byId, byName = {}, {}
+        for i, photo in ipairs( targets ) do
+            local id, fileName = photoIdentity( photo )
+            if tostring( entry ) == id then byId[#byId + 1] = i
+            elseif matchesExpected( entry, id, fileName ) then byName[#byName + 1] = i end
+        end
+        local hits = #byId > 0 and byId or byName
+        if #hits > 1 then
+            return mismatch( tostring( entry ) .. " matches " .. #hits .. " photos; name them by localId" )
+        end
+        if #hits == 0 or taken[hits[1]] then return mismatch() end
+        taken[hits[1]] = true
+    end
+
+    if params.dryRun == true then
+        local plan = {}
+        for _, photo in ipairs( targets ) do
+            local id, fileName = photoIdentity( photo )
+            plan[#plan + 1] = {
+                localId = id,
+                fileName = fileName,
+                before = before( photo ),
+                after = after and after( photo ) or requested( params ),
+            }
+        end
+        return nil, { dryRun = true, photos = plan }
+    end
+    return targets
+end
+
+-- Develop values read back: numbers within 0.01; tables (tone curves) by content, not by reference
+local function sameDevelopValue( want, got )
+    if type( want ) == "number" and type( got ) == "number" then return math.abs( got - want ) <= 0.01 end
+    if type( want ) == "table" and type( got ) == "table" then
+        for k, v in pairs( want ) do
+            if not sameDevelopValue( v, got[k] ) then return false end
+        end
+        for k in pairs( got ) do
+            if want[k] == nil then return false end
+        end
+        return true
+    end
+    return want == got
+end
+
 --[[
     get_studio_info - Returns catalog, Lightroom and plugin information
     Returns: { catalogName, catalogPath, lightroomVersion, lightroomBuild, pluginVersion }
@@ -218,9 +346,9 @@ function CommandHandlers.set_rating( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { rating = safeGetRawMetadata( p, "rating" ) } end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set Rating", function( context )
@@ -231,7 +359,7 @@ function CommandHandlers.set_rating( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -267,9 +395,9 @@ function CommandHandlers.set_label( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { label = safeGetRawMetadata( p, "colorNameForLabel" ) } end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set Label", function( context )
@@ -280,7 +408,7 @@ function CommandHandlers.set_label( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -299,9 +427,9 @@ function CommandHandlers.set_caption( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { caption = safeGetRawMetadata( p, "caption" ) } end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set Caption", function( context )
@@ -312,7 +440,7 @@ function CommandHandlers.set_caption( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -331,9 +459,9 @@ function CommandHandlers.set_title( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { title = safeGetRawMetadata( p, "title" ) } end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set Title", function( context )
@@ -344,7 +472,7 @@ function CommandHandlers.set_title( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -374,9 +502,10 @@ function CommandHandlers.set_pick_flag( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { pickFlag = safeGetRawMetadata( p, "pickStatus" ) } end,
+            function() return { pickFlag = flagValue } end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set Pick Flag", function( context )
@@ -387,7 +516,7 @@ function CommandHandlers.set_pick_flag( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -406,9 +535,10 @@ function CommandHandlers.add_keywords( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { keywords = safeGetFormattedMetadata( p, "keywordTags" ) } end,
+            function( p ) return plannedKeywords( p, params.keywords, true ) end )
+        if not targetPhotos then
+            return early
         end
 
         -- Helper function to find or create keyword
@@ -460,7 +590,7 @@ function CommandHandlers.add_keywords( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -479,9 +609,10 @@ function CommandHandlers.remove_keywords( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { keywords = safeGetFormattedMetadata( p, "keywordTags" ) } end,
+            function( p ) return plannedKeywords( p, params.keywords, false ) end )
+        if not targetPhotos then
+            return early
         end
 
         -- Helper function to find keyword by path
@@ -526,7 +657,7 @@ function CommandHandlers.remove_keywords( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -777,9 +908,10 @@ function CommandHandlers.set_metadata( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { [ tostring( params.field ) ] = safeGetRawMetadata( p, params.field ) } end,
+            function() return { [ tostring( params.field ) ] = params.value } end )
+        if not targetPhotos then
+            return early
         end
 
         local field = params.field
@@ -793,7 +925,7 @@ function CommandHandlers.set_metadata( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -886,9 +1018,13 @@ function CommandHandlers.set_develop_settings( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p )
+            local now, values = p:getDevelopSettings() or {}, {}
+            for key in pairs( params.settings ) do values[key] = now[key] end
+            return values
+        end, function() return params.settings end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set Develop Settings", function( context )
@@ -899,7 +1035,23 @@ function CommandHandlers.set_develop_settings( params )
             end
         end )
 
-        return { success = true }
+        -- Read back: report any value that did not stick
+        local mismatches = {}
+        for _, photo in ipairs( targetPhotos ) do
+            local _, fileName = photoIdentity( photo )
+            local now = photo:getDevelopSettings() or {}
+            for key, want in pairs( params.settings ) do
+                local got = now[key]
+                if not sameDevelopValue( want, got ) then
+                    mismatches[#mismatches + 1] = fileName .. "." .. key .. ": wanted " .. tostring( want ) .. ", got " .. tostring( got )
+                end
+            end
+        end
+        if #mismatches > 0 then
+            return { error = "Readback mismatch: " .. table.concat( mismatches, "; " ) }
+        end
+
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -1043,9 +1195,15 @@ function CommandHandlers.set_iptc_data( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p )
+            local values = {}
+            for key in pairs( params.data ) do
+                values[key] = safeGetRawMetadata( p, key == "artist" and "creator" or key )   -- same alias as fieldMap below
+            end
+            return values
+        end, function() return params.data end )
+        if not targetPhotos then
+            return early
         end
 
         -- Map of IPTC field names to Lightroom metadata field names
@@ -1083,7 +1241,7 @@ function CommandHandlers.set_iptc_data( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -1322,9 +1480,13 @@ function CommandHandlers.set_gps_data( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { gps = safeGetRawMetadata( p, "gps" ), gpsAltitude = safeGetRawMetadata( p, "gpsAltitude" ) } end,
+            function( p )
+                local altitude = type( params.altitude ) == "number" and params.altitude or safeGetRawMetadata( p, "gpsAltitude" )
+                return { gps = { latitude = latitude, longitude = longitude }, gpsAltitude = altitude }
+            end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Set GPS Data", function( context )
@@ -1338,7 +1500,7 @@ function CommandHandlers.set_gps_data( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 
@@ -1352,9 +1514,9 @@ function CommandHandlers.clear_gps_data( params )
             return { error = "No active catalog" }
         end
 
-        local targetPhotos = catalog:getTargetPhotos()
-        if not targetPhotos or #targetPhotos == 0 then
-            return { error = "No photos selected" }
+        local targetPhotos, early = guardWrite( catalog, params, function( p ) return { gps = safeGetRawMetadata( p, "gps" ), gpsAltitude = safeGetRawMetadata( p, "gpsAltitude" ) } end, function() return { gps = "cleared" } end )
+        if not targetPhotos then
+            return early
         end
 
         catalog:withWriteAccessDo( "MCP Clear GPS Data", function( context )
@@ -1366,7 +1528,7 @@ function CommandHandlers.clear_gps_data( params )
             end
         end )
 
-        return { success = true }
+        return { success = true, photos = describePhotos( targetPhotos ) }
     end )
 end
 

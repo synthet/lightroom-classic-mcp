@@ -73,16 +73,167 @@ function Tests.test_set_rating()
     local p1 = Mocks.Photo.new("123", "test.jpg")
     Mocks.state.photos = { p1 }
 
-    -- Valid rating
-    local result = CommandHandlers.set_rating({ rating = 5 })
+    -- Valid rating, confirmed, expected photo named by file name
+    local result = CommandHandlers.set_rating({ rating = 5, expected = { "test.jpg" }, confirmed = true })
     assertTable(result)
     assertEqual(true, result.success)
     assertEqual(5, p1:getRawMetadata("rating"))
+    assertEqual("123", result.photos[1].localId)
 
     -- Invalid rating
-    result = CommandHandlers.set_rating({ rating = 6 })
+    result = CommandHandlers.set_rating({ rating = 6, expected = { "test.jpg" }, confirmed = true })
     assertTable(result)
     assertEqual("Rating must be between 0 and 5", result.error)
+    print("PASS")
+end
+
+function Tests.test_write_without_expected_photos_is_refused()
+    print("Running test_write_without_expected_photos_is_refused...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    Mocks.state.photos = { p1 }
+    local result = CommandHandlers.set_rating({ rating = 4, confirmed = true })
+    assert(result.error and result.error:find("^Invalid expected"), tostring(result.error))
+    assertEqual(0, p1:getRawMetadata("rating"))   -- mock photos start at 0; unchanged
+    print("PASS")
+end
+
+function Tests.test_unconfirmed_write_is_refused()
+    print("Running test_unconfirmed_write_is_refused...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    Mocks.state.photos = { p1 }
+    local result = CommandHandlers.set_title({ title = "x", expected = { "123" } })
+    assert(result.error and result.error:find("^Invalid confirmed"), tostring(result.error))
+    assertEqual("", p1:getRawMetadata("title"))
+    print("PASS")
+end
+
+function Tests.test_write_to_other_photos_is_a_target_mismatch()
+    print("Running test_write_to_other_photos_is_a_target_mismatch...")
+    local p1 = Mocks.Photo.new("123", "DSC_0001.NEF")
+    local p2 = Mocks.Photo.new("124", "DSC_0002.NEF")
+    Mocks.state.photos = { p1, p2 }
+    -- the user's selection grew to two photos; the agent expected one
+    local result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", p1:getRawMetadata("caption"))
+    -- expecting a photo that is not selected
+    result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001", "DSC_0002", "DSC_0003" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    -- ids and base names both match
+    result = CommandHandlers.set_caption({ caption = "x", expected = { "123", "DSC_0002" }, confirmed = true })
+    assertEqual(true, result.success)
+    print("PASS")
+end
+
+function Tests.test_dry_run_plans_and_writes_nothing()
+    print("Running test_dry_run_plans_and_writes_nothing...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    p1:setRawMetadata("rating", 2)
+    Mocks.state.photos = { p1 }
+    local result = CommandHandlers.set_rating({ rating = 5, expected = { "test.jpg" }, dryRun = true })
+    assertEqual(true, result.dryRun)
+    assertEqual(2, result.photos[1].before.rating)
+    assertEqual(5, result.photos[1].after.rating)
+    assertEqual(2, p1:getRawMetadata("rating"))
+    print("PASS")
+end
+
+function Tests.test_develop_write_reads_back()
+    print("Running test_develop_write_reads_back...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    Mocks.state.photos = { p1 }
+    local ok = CommandHandlers.set_develop_settings({ settings = { Exposure2012 = 0.5 }, expected = { "123" }, confirmed = true })
+    assertEqual(true, ok.success)
+    Mocks.state.ignoreDevelopKeys = { Contrast2012 = true }
+    local bad = CommandHandlers.set_develop_settings({ settings = { Contrast2012 = 20 }, expected = { "123" }, confirmed = true })
+    Mocks.state.ignoreDevelopKeys = nil
+    assert(bad.error and bad.error:find("^Readback mismatch") and bad.error:find("Contrast2012"), tostring(bad.error))
+    print("PASS")
+end
+
+function Tests.test_develop_dry_run_shows_current_values()
+    print("Running test_develop_dry_run_shows_current_values...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    p1:applyDevelopSettings({ Exposure2012 = 0.1 })
+    Mocks.state.photos = { p1 }
+    local plan = CommandHandlers.set_develop_settings({ settings = { Exposure2012 = 0.7 }, expected = { "123" }, dryRun = true })
+    assertEqual(0.1, plan.photos[1].before.Exposure2012)
+    assertEqual(0.7, plan.photos[1].after.Exposure2012)
+    assertEqual(0.1, p1:getDevelopSettings().Exposure2012)
+    print("PASS")
+end
+
+function Tests.test_one_expected_entry_cannot_approve_two_photos()
+    print("Running test_one_expected_entry_cannot_approve_two_photos...")
+    -- a raw and its JPEG share the base name
+    local raw = Mocks.Photo.new("201", "DSC_0001.NEF")
+    local jpg = Mocks.Photo.new("202", "DSC_0001.JPG")
+    Mocks.state.photos = { raw, jpg }
+    local result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", raw:getRawMetadata("caption"))
+    assertEqual("", jpg:getRawMetadata("caption"))
+    -- the base name twice still names each photo ambiguously
+    result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001", "DSC_0001" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", raw:getRawMetadata("caption"))
+    -- full file names name one photo each
+    result = CommandHandlers.set_caption({ caption = "x", expected = { "DSC_0001.NEF", "DSC_0001.JPG" }, confirmed = true })
+    assertEqual(true, result.success)
+    print("PASS")
+end
+
+function Tests.test_virtual_copies_need_ids()
+    print("Running test_virtual_copies_need_ids...")
+    -- a master and its virtual copy share the file name
+    local master = Mocks.Photo.new("301", "IMG.CR3")
+    local copy = Mocks.Photo.new("302", "IMG.CR3")
+    Mocks.state.photos = { master, copy }
+    local result = CommandHandlers.set_title({ title = "x", expected = { "IMG.CR3" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    result = CommandHandlers.set_title({ title = "x", expected = { "IMG.CR3", "IMG.CR3" }, confirmed = true })
+    assert(result.error and result.error:find("^Target mismatch"), tostring(result.error))
+    assertEqual("", master:getRawMetadata("title"))
+    assertEqual("", copy:getRawMetadata("title"))
+    result = CommandHandlers.set_title({ title = "x", expected = { "301", "302" }, confirmed = true })
+    assertEqual(true, result.success)
+    assertEqual("x", copy:getRawMetadata("title"))
+    print("PASS")
+end
+
+function Tests.test_dry_run_after_is_the_planned_value_of_the_same_fields()
+    print("Running test_dry_run_after_is_the_planned_value_of_the_same_fields...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    p1:setRawMetadata("keywordTags", "bird, crow")
+    p1:setRawMetadata("pickStatus", 0)
+    p1:setRawMetadata("gpsAltitude", 12)
+    Mocks.state.photos = { p1 }
+    local plan = CommandHandlers.add_keywords({ keywords = { "Animals > fish", "crow" }, expected = { "123" }, dryRun = true })
+    assertEqual("bird, crow", plan.photos[1].before.keywords)
+    assertEqual("bird, crow, fish", plan.photos[1].after.keywords)
+    plan = CommandHandlers.remove_keywords({ keywords = { "crow" }, expected = { "123" }, dryRun = true })
+    assertEqual("bird", plan.photos[1].after.keywords)
+    plan = CommandHandlers.set_pick_flag({ pickFlag = "reject", expected = { "123" }, dryRun = true })
+    assertEqual(0, plan.photos[1].before.pickFlag)
+    assertEqual(-1, plan.photos[1].after.pickFlag)
+    plan = CommandHandlers.set_metadata({ field = "copyright", value = "(c) me", expected = { "123" }, dryRun = true })
+    assertEqual("(c) me", plan.photos[1].after.copyright)
+    assertEqual(nil, plan.photos[1].after.value)
+    plan = CommandHandlers.set_gps_data({ latitude = 10, longitude = 20, expected = { "123" }, dryRun = true })
+    assertEqual(10, plan.photos[1].after.gps.latitude)
+    assertEqual(20, plan.photos[1].after.gps.longitude)
+    assertEqual(12, plan.photos[1].after.gpsAltitude)   -- no altitude given: unchanged
+    assertEqual(nil, p1:getRawMetadata("gps"))
+    assertEqual("bird, crow", p1:getRawMetadata("keywordTags"))
+    print("PASS")
+end
+
+function Tests.test_table_develop_values_read_back_by_content()
+    print("Running test_table_develop_values_read_back_by_content...")
+    local p1 = Mocks.Photo.new("123", "test.jpg")
+    Mocks.state.photos = { p1 }
+    local ok = CommandHandlers.set_develop_settings({ settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } }, expected = { "123" }, confirmed = true })
+    assertEqual(true, ok.success, tostring(ok.error))
     print("PASS")
 end
 

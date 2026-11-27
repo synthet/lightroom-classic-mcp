@@ -97,6 +97,27 @@ function Mocks.Photo:setRawMetadata( key, value )
     self.metadata[key] = value
 end
 
+-- Develop settings; keys listed in Mocks.state.ignoreDevelopKeys do not stick (readback tests)
+function Mocks.Photo:getDevelopSettings()
+    self.develop = self.develop or {}
+    local function deepCopy( v )
+        if type( v ) ~= "table" then return v end
+        local t = {}
+        for k, x in pairs( v ) do t[k] = deepCopy( x ) end
+        return t
+    end
+    return deepCopy( self.develop )   -- Lightroom returns fresh tables, never the ones applied
+end
+
+function Mocks.Photo:applyDevelopSettings( settings )
+    self.develop = self.develop or {}
+    for k, v in pairs( settings ) do
+        if not ( Mocks.state.ignoreDevelopKeys and Mocks.state.ignoreDevelopKeys[k] ) then
+            self.develop[k] = v
+        end
+    end
+end
+
 function Mocks.Photo:addKeyword( keyword )
     table.insert( self.metadata.keywords, keyword )
 end

@@ -29,6 +29,15 @@ CAPABILITIES = {
     "source": "research_notes/Lightroom automation paths 2026/classic-sdk.md section 6",
 }
 
+
+def _write_params(params: dict, expected_photos: list[str | int], confirmed: bool, dry_run: bool) -> dict:
+    """Checks the write contract (docs/tools.md) and adds its fields to the plugin params."""
+    if not expected_photos:
+        raise tool_error(LrcErrorCode.INVALID_PARAMS, "expected_photos must list the ids or file names of the photos to change.")
+    if not dry_run and not confirmed:
+        raise tool_error(LrcErrorCode.INVALID_PARAMS, "Writes need confirmed=true. Preview with dry_run=true first.")
+    return {**params, "expected": [str(p) for p in expected_photos], "confirmed": bool(confirmed), "dryRun": bool(dry_run)}
+
 # Try to import Pillow for image metadata reading
 try:
     from PIL import Image
@@ -147,21 +156,25 @@ async def get_selection(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_rating(rating: int, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_rating(rating: int, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the star rating for the currently selected photos.
 
     Args:
         rating: Integer between 0 and 5.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     if not (0 <= rating <= 5):
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "Rating must be between 0 and 5")
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_rating", {"rating": rating})
+        result = lrc.send_command("set_rating", _write_params({"rating": rating}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -172,12 +185,16 @@ async def set_rating(rating: int, ctx: Context[ServerSession, AppContext]) -> st
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_label(label: str, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_label(label: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the color label for the currently selected photos.
 
     Args:
         label: One of 'Red', 'Yellow', 'Green', 'Blue', 'Purple', 'None'.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     valid_labels = ['Red', 'Yellow', 'Green', 'Blue', 'Purple', 'None']
     if label not in valid_labels:
@@ -185,9 +202,9 @@ async def set_label(label: str, ctx: Context[ServerSession, AppContext]) -> str:
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_label", {"label": label})
+        result = lrc.send_command("set_label", _write_params({"label": label}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -198,15 +215,19 @@ async def set_label(label: str, ctx: Context[ServerSession, AppContext]) -> str:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_caption(caption: str, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_caption(caption: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the caption for the currently selected photos.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_caption", {"caption": caption})
+        result = lrc.send_command("set_caption", _write_params({"caption": caption}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -217,18 +238,22 @@ async def set_caption(caption: str, ctx: Context[ServerSession, AppContext]) -> 
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_title(title: str, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_title(title: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the title for the currently selected photos.
 
     Args:
         title: Title text to apply.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_title", {"title": title})
+        result = lrc.send_command("set_title", _write_params({"title": title}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -239,12 +264,16 @@ async def set_title(title: str, ctx: Context[ServerSession, AppContext]) -> str:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_pick_flag(pick_flag: str, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_pick_flag(pick_flag: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set the pick flag (pick/reject) for the currently selected photos.
 
     Args:
         pick_flag: One of 'pick', 'reject', 'none'.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     valid_flags = ['pick', 'reject', 'none']
     if pick_flag.lower() not in valid_flags:
@@ -252,9 +281,9 @@ async def set_pick_flag(pick_flag: str, ctx: Context[ServerSession, AppContext])
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_pick_flag", {"pickFlag": pick_flag})
+        result = lrc.send_command("set_pick_flag", _write_params({"pickFlag": pick_flag}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -265,21 +294,25 @@ async def set_pick_flag(pick_flag: str, ctx: Context[ServerSession, AppContext])
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def add_keywords(keywords: list[str], ctx: Context[ServerSession, AppContext]) -> str:
+async def add_keywords(keywords: list[str], expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Add keywords to the currently selected photos.
 
     Args:
         keywords: Array of keyword strings. Supports hierarchical keywords using ' > ' separator (e.g., "Location > Europe > France").
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     if not isinstance(keywords, list):
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "keywords must be an array")
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("add_keywords", {"keywords": keywords})
+        result = lrc.send_command("add_keywords", _write_params({"keywords": keywords}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -290,21 +323,25 @@ async def add_keywords(keywords: list[str], ctx: Context[ServerSession, AppConte
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def remove_keywords(keywords: list[str], ctx: Context[ServerSession, AppContext]) -> str:
+async def remove_keywords(keywords: list[str], expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Remove keywords from the currently selected photos.
 
     Args:
         keywords: Array of keyword strings to remove. Supports hierarchical keywords using ' > ' separator.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     if not isinstance(keywords, list):
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "keywords must be an array")
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("remove_keywords", {"keywords": keywords})
+        result = lrc.send_command("remove_keywords", _write_params({"keywords": keywords}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -400,19 +437,23 @@ async def search_photos(query: str, ctx: Context[ServerSession, AppContext]) -> 
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_metadata(field: str, value: str, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_metadata(field: str, value: str, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set a metadata field for the currently selected photos.
 
     Args:
         field: Metadata field name (e.g., 'dateCreated', 'copyright', 'gps', 'gpsAltitude').
         value: Value to set. For dates, use ISO format strings. For GPS, use appropriate format.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_metadata", {"field": field, "value": value})
+        result = lrc.send_command("set_metadata", _write_params({"field": field, "value": value}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -584,18 +625,22 @@ async def get_iptc_data(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_iptc_data(data: dict, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_iptc_data(data: dict, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set IPTC metadata for the currently selected photos.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     if not isinstance(data, dict):
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "data must be a dictionary")
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_iptc_data", {"data": data})
+        result = lrc.send_command("set_iptc_data", _write_params({"data": data}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -646,7 +691,7 @@ async def get_all_metadata(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_gps_data(latitude: float, longitude: float, altitude: Optional[float] = None, ctx: Context[ServerSession, AppContext] = None) -> str:
+async def set_gps_data(latitude: float, longitude: float, expected_photos: list[str | int], altitude: Optional[float] = None, ctx: Context[ServerSession, AppContext] = None, confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set GPS coordinates for the currently selected photos.
 
@@ -654,6 +699,10 @@ async def set_gps_data(latitude: float, longitude: float, altitude: Optional[flo
         latitude: GPS latitude in decimal degrees (-90 to 90)
         longitude: GPS longitude in decimal degrees (-180 to 180)
         altitude: Optional GPS altitude in meters
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     if not (-90 <= latitude <= 90):
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "Latitude must be between -90 and 90")
@@ -666,9 +715,9 @@ async def set_gps_data(latitude: float, longitude: float, altitude: Optional[flo
         if altitude is not None:
             params["altitude"] = altitude
 
-        result = lrc.send_command("set_gps_data", params)
+        result = lrc.send_command("set_gps_data", _write_params(params, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -679,15 +728,19 @@ async def set_gps_data(latitude: float, longitude: float, altitude: Optional[flo
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def clear_gps_data(ctx: Context[ServerSession, AppContext]) -> str:
+async def clear_gps_data(expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Clear/remove GPS coordinates from the currently selected photos.
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("clear_gps_data")
+        result = lrc.send_command("clear_gps_data", _write_params({}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
@@ -1214,21 +1267,25 @@ async def get_develop_settings(ctx: Context[ServerSession, AppContext]) -> Any:
         raise as_tool_error(e)
 
 @mcp.tool(annotations={"destructive": True})
-async def set_develop_settings(settings: dict, ctx: Context[ServerSession, AppContext]) -> str:
+async def set_develop_settings(settings: dict, expected_photos: list[str | int], ctx: Context[ServerSession, AppContext], confirmed: bool = False, dry_run: bool = False) -> Any:
     """
     Set develop/Camera Raw settings for the currently selected photos.
 
     Args:
         settings: Dictionary of parameter names to values (e.g., {"Exposure": 1.0, "Contrast": 25}).
+
+    Write contract (docs/tools.md): expected_photos lists the ids or file names of all the selected
+    photos this changes; any other selection fails with TargetMismatch. confirmed must be true to
+    write. dry_run=true returns each photo's current and planned values and writes nothing.
     """
     if not isinstance(settings, dict):
         raise tool_error(LrcErrorCode.INVALID_PARAMS, "settings must be a dictionary")
 
     lrc = ctx.request_context.lifespan_context.lrc
     try:
-        result = lrc.send_command("set_develop_settings", {"settings": settings})
+        result = lrc.send_command("set_develop_settings", _write_params({"settings": settings}, expected_photos, confirmed, dry_run))
         if result and "result" in result:
-            return "Success"
+            return result["result"]
         elif result and "error" in result:
             raise plugin_error(result["error"])
         else:
