@@ -23,6 +23,8 @@ class TestBrokerIntegration(unittest.TestCase):
         broker.BROKER_PORT = cls.test_port
         broker.SOCKET_PORT = cls.socket_port
         broker.HISTORY_AUTO_SAVE = False
+        broker.BROKER_TOKEN = "integration-token"
+        cls.auth = {broker.broker_auth.TOKEN_HEADER: broker.BROKER_TOKEN}
 
         # Start broker in a separate thread
         cls.server_thread = threading.Thread(target=lambda: broker.app.run(host='127.0.0.1', port=cls.test_port, threaded=True), daemon=True)
@@ -48,7 +50,7 @@ class TestBrokerIntegration(unittest.TestCase):
         # 1. MCP Client sends request to Broker
         def send_client_request():
             url = f"http://127.0.0.1:{self.test_port}/request"
-            response = requests.post(url, json={"jsonrpc": "2.0", "method": "test_method", "id": 1, "params": {"foo": "bar"}})
+            response = requests.post(url, json={"jsonrpc": "2.0", "method": "test_method", "id": 1, "params": {"foo": "bar"}}, headers=self.auth)
             return response.json()
 
         client_thread = threading.Thread(target=send_client_request)
@@ -75,7 +77,7 @@ class TestBrokerIntegration(unittest.TestCase):
         time.sleep(0.5) # Give time for request to arrive
 
         poll_url = f"http://127.0.0.1:{self.test_port}/poll"
-        poll_response = requests.post(poll_url)
+        poll_response = requests.post(poll_url, headers=self.auth)
 
         self.assertEqual(poll_response.status_code, 200)
         request_data = poll_response.json()
@@ -93,7 +95,7 @@ class TestBrokerIntegration(unittest.TestCase):
         }
 
         response_url = f"http://127.0.0.1:{self.test_port}/response"
-        requests.post(response_url, json=response_data)
+        requests.post(response_url, json=response_data, headers=self.auth)
 
         # 4. Broker receives response and returns it to Client
         t.join(timeout=2)
@@ -114,7 +116,7 @@ class TestBrokerIntegration(unittest.TestCase):
         def send_client_request():
             url = f"http://127.0.0.1:{self.test_port}/request"
             try:
-                response = requests.post(url, json={"jsonrpc": "2.0", "method": "socket_test", "id": 2, "params": {}})
+                response = requests.post(url, json={"jsonrpc": "2.0", "method": "socket_test", "id": 2, "params": {}}, headers=self.auth)
                 return response.json()
             except Exception as e:
                 return {"error": str(e)}

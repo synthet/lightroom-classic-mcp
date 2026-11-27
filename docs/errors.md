@@ -5,6 +5,7 @@ Every tool failure reaches the client as text that starts with `[<Code>]`, then 
 | Code | When | Recovery |
 |---|---|---|
 | `BrokerUnavailable` | The broker on 127.0.0.1:8085 isn't running and couldn't be started, or refused the connection | Run `mcp-server/start_broker.py`, then retry |
+| `BrokerUnauthorized` | The broker refused the access token: the discovery file `~/.lightroom-classic-mcp/broker.json` is missing or belongs to an older broker | Restart the broker (`mcp-server/start_broker.py`), then retry |
 | `PluginDisconnected` | The broker runs, but the Lightroom plugin isn't polling it (checked after a timeout) | Open Lightroom Classic; check File > Plug-in Manager > MCP Bridge is enabled |
 | `LightroomTimeout` | The plugin is connected but didn't answer in time, or a handler timed out (for example waiting for a thumbnail) | Wait and retry. For a write, read the photo first to see whether it applied |
 | `InvalidParams` | An argument is missing, has the wrong type or is out of range (checked by the server or the plugin) | Fix the arguments as the message says |

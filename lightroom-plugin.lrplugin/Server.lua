@@ -10,6 +10,7 @@ local LrTasks = import 'LrTasks'
 local LrDialogs = import 'LrDialogs'
 local JSON = require 'JSON'
 local CommandHandlers = require 'CommandHandlers'
+local BrokerAuth = require 'BrokerAuth'
 
 local logger = LrLogger( 'MCPBridge' )
 logger:enable( 'print' )
@@ -73,6 +74,7 @@ local function runHttpMode( headers )
 
     local consecutiveErrors = 0
     local shown = false
+    local authHeaders = BrokerAuth.headers( headers )   -- refreshed when the broker answers 401
 
     while _G.mcpServerRunning do
         -- Use LrTasks.pcall instead of regular pcall to support yielding
@@ -80,10 +82,18 @@ local function runHttpMode( headers )
             local responseBody, responseHeaders = LrHttp.post(
                 BROKER_URL .. "/poll",
                 "{}",
-                headers,
+                authHeaders,
                 "POST",
                 5
             )
+
+            if responseHeaders and responseHeaders.status == 401 then
+                -- The broker restarted with a new token (or none is readable yet): read it again
+                logToFile( "Broker refused the token; rereading " .. tostring( BrokerAuth.discoveryPath() ) )
+                authHeaders = BrokerAuth.headers( headers, true )
+                LrTasks.sleep( 1 )
+                return
+            end
 
             if responseBody and responseBody ~= "" then
                 if not shown then
@@ -110,7 +120,7 @@ local function runHttpMode( headers )
                     local sendBody, sendHeaders = LrHttp.post(
                         BROKER_URL .. "/response",
                         responseJson,
-                        headers,
+                        authHeaders,
                         "POST",
                         10
                     )

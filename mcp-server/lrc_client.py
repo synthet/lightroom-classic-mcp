@@ -18,6 +18,7 @@ from mcp.shared.exceptions import McpError
 
 import requests
 
+import broker_auth
 from errors import LrcErrorCode, raise_for_response, tool_error
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,12 @@ __version__ = "1.0.0"
 # Broker configuration with environment variable overrides
 BROKER_URL = os.environ.get("LRC_BROKER_URL", "http://127.0.0.1:8085")
 BROKER_SCRIPT = Path(__file__).parent / "broker.py"
+
+
+def auth_headers() -> Dict[str, str]:
+    """The broker's access token, read fresh: the broker writes a new one each time it starts."""
+    token = broker_auth.read_token()
+    return {broker_auth.TOKEN_HEADER: token} if token else {}
 REQUEST_TIMEOUT = int(os.environ.get("LRC_REQUEST_TIMEOUT", "35"))  # Slightly longer than broker's internal timeout
 
 
@@ -42,8 +49,9 @@ class LrCClient:
     def _ensure_broker_running(self) -> bool:
         """Check if broker is running, optionally start it."""
         try:
-            response = requests.get(f"{self.broker_url}/api/status", timeout=2)
-            return response.status_code == 200
+            response = requests.get(f"{self.broker_url}/api/status", headers=auth_headers(), timeout=2)
+            # 401: a broker is running but refuses the token; send_command reports BrokerUnauthorized
+            return response.status_code in (200, 401)
         except requests.exceptions.ConnectionError:
             return False
         except Exception as e:
@@ -101,8 +109,19 @@ class LrCClient:
             response = requests.post(
                 f"{self.broker_url}/request",
                 json=request,
+                headers=auth_headers(),
                 timeout=REQUEST_TIMEOUT
             )
+            if response.status_code == 401:
+                # The broker may have restarted with a new token: read it again and retry once
+                response = requests.post(
+                    f"{self.broker_url}/request",
+                    json=request,
+                    headers=auth_headers(),
+                    timeout=REQUEST_TIMEOUT
+                )
+                if response.status_code == 401:
+                    raise tool_error(LrcErrorCode.BROKER_UNAUTHORIZED, f"The broker refused the access token ({method}).")
 
             if response.status_code == 504:
                 raise self._timeout_error(method)
@@ -162,7 +181,7 @@ def check_plugin_status() -> dict:
     }
 
     try:
-        response = requests.get(f"{BROKER_URL}/api/status", timeout=2)
+        response = requests.get(f"{BROKER_URL}/api/status", headers=auth_headers(), timeout=2)
         if response.status_code == 200:
             status["broker_running"] = True
             data = response.json()
